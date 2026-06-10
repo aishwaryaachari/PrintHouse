@@ -1,0 +1,62 @@
+# ========================
+# Python / Django (Backend)
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environment
+venv/
+env/
+.env/
+.venv/
+
+# Django
+backend/db.sqlite3
+backend/*.log
+backend/media/
+backend/staticfiles/
+backend/static/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# ========================
+# Node.js / React (Frontend)
+# ========================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# ========================
+# IDEs & Editors
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ========================
+# Misc
+# ========================
+*.log
+*.tmp
+*.bak

@@ -1,0 +1,40 @@
+{
+  "products": {
+    "bottle_01": {
+      "name": "Standard Water Bottle",
+      "dimensions": {
+        "width": 800,
+        "height": 1200
+      },
+      "print_zones": [
+        {
+          "id": "front_logo",
+          "type": "flat",
+          "x": 300,
+          "y": 400,
+          "width": 200,
+          "height": 200,
+          "shape": "rectangle"
+        }
+      ]
+    },
+    "mug_01": {
+      "name": "Ceramic Mug",
+      "dimensions": {
+        "width": 600,
+        "height": 600
+      },
+      "print_zones": [
+        {
+          "id": "wrap_around",
+          "type": "curved",
+          "x": 100,
+          "y": 200,
+          "width": 400,
+          "height": 150,
+          "radius": 50
+        }
+      ]
+    }
+  }
+}
