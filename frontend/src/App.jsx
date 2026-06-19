@@ -149,6 +149,41 @@ export default function App() {
     showToast('Signed out successfully');
   };
 
+  const handleCheckout = async () => {
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    const totalPrice = cartItems.reduce((sum, i) => sum + i.pricePerItem * i.qty, 0);
+    const totalItems = cartItems.reduce((sum, i) => sum + i.qty, 0);
+    
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/auth/inquiry/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: cartItems,
+          totalPrice,
+          totalItems,
+          email: user.email,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setCartItems([]);
+        setCartOpen(false);
+        alert(`Bulk inquiry #${data.inquiry_id} submitted successfully! Our team will contact you shortly.`);
+      } else {
+        alert(data.error || 'Failed to submit inquiry.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error connecting to backend database.');
+    }
+  };
+
   const cartCount = cartItems.reduce((sum, i) => sum + i.qty, 0);
 
   useEffect(() => {
@@ -194,7 +229,7 @@ export default function App() {
           items={cartItems}
           onUpdateQty={handleUpdateQty}
           onRemove={handleRemove}
-          onCheckout={() => { setCartOpen(false); alert('Bulk inquiry submitted! Our team will contact you shortly.'); }}
+          onCheckout={handleCheckout}
         />
         <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthSuccess={(u) => { setUser(u); showToast(`Welcome, ${u.name}!`); }} />
         <div className={`cart-toast${toast.show ? ' show' : ''}`}>{toast.msg}</div>
@@ -230,7 +265,7 @@ export default function App() {
           <button className="moo-nav-btn" onClick={() => setView('pdp-bottles')}>Shop Now</button>
         </div>
       </nav>
-      <Cart isOpen={cartOpen} onClose={() => setCartOpen(false)} items={cartItems} onUpdateQty={handleUpdateQty} onRemove={handleRemove} onCheckout={() => { setCartOpen(false); alert('Bulk inquiry submitted! Our team will contact you shortly.'); }} />
+      <Cart isOpen={cartOpen} onClose={() => setCartOpen(false)} items={cartItems} onUpdateQty={handleUpdateQty} onRemove={handleRemove} onCheckout={handleCheckout} />
       <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthSuccess={(u) => { setUser(u); showToast(`Welcome, ${u.name}!`); }} />
       <div className={`cart-toast${toast.show ? ' show' : ''}`}>{toast.msg}</div>
 

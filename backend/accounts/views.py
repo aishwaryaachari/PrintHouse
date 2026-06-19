@@ -81,3 +81,43 @@ def me_view(request):
             "user": {"id": u.id, "name": u.get_full_name() or u.username, "email": u.email}
         })
     return JsonResponse({"authenticated": False}, status=401)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def inquiry_view(request):
+    try:
+        from .models import BulkInquiry
+        user = request.user if request.user.is_authenticated else None
+        
+        data = json.loads(request.body)
+        items = data.get("items", [])
+        total_price = data.get("totalPrice", 0)
+        total_items = data.get("totalItems", 0)
+        contact_email = data.get("email", "")
+        
+        if not contact_email and user:
+            contact_email = user.email
+            
+        if not contact_email:
+            return JsonResponse({"error": "Contact email is required."}, status=400)
+            
+        if not items:
+            return JsonResponse({"error": "Cart is empty."}, status=400)
+            
+        inquiry = BulkInquiry.objects.create(
+            user=user,
+            contact_email=contact_email,
+            items=items,
+            total_price=total_price,
+            total_items=total_items,
+            status='PENDING'
+        )
+        
+        return JsonResponse({
+            "success": True,
+            "inquiry_id": inquiry.id
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
