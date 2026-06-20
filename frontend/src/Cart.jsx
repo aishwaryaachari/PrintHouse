@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+
 const cartStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Outfit:wght@300;400;500;600&display=swap');
 
@@ -115,9 +117,103 @@ const cartStyles = `
     font-family: 'Outfit', sans-serif;
   }
   .cart-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* COUPON SECTION */
+  .cart-coupon-section {
+    padding: 20px 32px;
+    border-top: 1px dashed var(--border-color);
+    background: var(--bg-offwhite);
+  }
+  .cart-coupon-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-light);
+    margin-bottom: 8px;
+    display: block;
+  }
+  .cart-coupon-input-wrap {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .cart-coupon-input {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: 'Outfit', sans-serif;
+    text-transform: uppercase;
+    background: var(--bg-white);
+    color: var(--text-dark);
+  }
+  .cart-coupon-apply-btn {
+    background: var(--text-dark);
+    color: var(--bg-white);
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .cart-coupon-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .cart-coupon-tag {
+    background: var(--bg-white);
+    border: 1px dashed var(--accent);
+    color: var(--text-dark);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cart-coupon-tag:hover {
+    background: var(--accent);
+    color: #0f1115;
+  }
+  .cart-coupon-active {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #e6f4ea;
+    border: 1px solid #34a853;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #137333;
+    font-weight: 500;
+  }
+  .cart-coupon-remove-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #c5221f;
+    font-weight: bold;
+    padding: 0 4px;
+  }
+  .cart-coupon-error {
+    color: #c5221f;
+    font-size: 12px;
+    margin-bottom: 8px;
+    display: block;
+    font-weight: 500;
+  }
 `;
 
-export default function Cart({ isOpen, onClose, items, onUpdateQty, onRemove, onCheckout }) {
+export default function Cart({ isOpen, onClose, items, onUpdateQty, onRemove, onCheckout, appliedCoupon, onApplyCoupon, onClearCoupon }) {
   // Inject styles once
   if (typeof document !== "undefined" && !document.querySelector("#cart-styles")) {
     const tag = document.createElement("style");
@@ -126,12 +222,54 @@ export default function Cart({ isOpen, onClose, items, onUpdateQty, onRemove, on
     document.head.appendChild(tag);
   }
 
+  const [couponInput, setCouponInput] = useState('');
+  const [availableCoupons, setAvailableCoupons] = useState([]);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Fetch available coupons from SQLite DB on open
+  useEffect(() => {
+    if (isOpen) {
+      fetch('http://127.0.0.1:8000/api/auth/coupon/list/')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.success) {
+            setAvailableCoupons(data.coupons || []);
+          }
+        })
+        .catch(err => console.error("Error loading coupons:", err));
+    }
+  }, [isOpen]);
+
+  const handleApply = async (code) => {
+    if (!code) return;
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/auth/coupon/validate/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        onApplyCoupon && onApplyCoupon(data);
+        setErrorMsg('');
+        setCouponInput('');
+      } else {
+        setErrorMsg(data.error || 'Invalid coupon code');
+      }
+    } catch (e) {
+      setErrorMsg('Error validating coupon');
+    }
+  };
+
   const totalItems = items.reduce((sum, i) => sum + i.qty, 0);
   const totalPrice = items.reduce((sum, i) => sum + i.pricePerItem * i.qty, 0);
   const savings = items.reduce((sum, i) => {
     const maxPrice = i.allPrices ? Math.max(...Object.values(i.allPrices)) : i.pricePerItem;
     return sum + (maxPrice - i.pricePerItem) * i.qty;
   }, 0);
+
+  const discountAmount = appliedCoupon ? (totalPrice * appliedCoupon.discount_percentage / 100) : 0;
+  const finalTotal = totalPrice - discountAmount;
 
   return (
     <>
@@ -191,6 +329,48 @@ export default function Cart({ isOpen, onClose, items, onUpdateQty, onRemove, on
           )}
         </div>
 
+        {/* Coupon Section */}
+        {items.length > 0 && (
+          <div className="cart-coupon-section">
+            <span className="cart-coupon-title">Promo / Coupon Code</span>
+            
+            {appliedCoupon ? (
+              <div className="cart-coupon-active">
+                <span>✓ Coupon <strong>{appliedCoupon.code}</strong> Applied ({appliedCoupon.discount_percentage}% Off)</span>
+                <button className="cart-coupon-remove-btn" onClick={onClearCoupon} title="Remove coupon">✕</button>
+              </div>
+            ) : (
+              <>
+                <div className="cart-coupon-input-wrap">
+                  <input
+                    type="text"
+                    className="cart-coupon-input"
+                    placeholder="Enter code (e.g. A12345)"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleApply(couponInput); }}
+                  />
+                  <button className="cart-coupon-apply-btn" onClick={() => handleApply(couponInput)}>Apply</button>
+                </div>
+                {errorMsg && <span className="cart-coupon-error">{errorMsg}</span>}
+                
+                {availableCoupons.length > 0 && (
+                  <div>
+                    <span className="cart-coupon-title" style={{ fontSize: 10, marginBottom: 6 }}>Available Offers (Click to Apply):</span>
+                    <div className="cart-coupon-list">
+                      {availableCoupons.map(c => (
+                        <div key={c.code} className="cart-coupon-tag" onClick={() => handleApply(c.code)}>
+                          🏷️ {c.code} ({c.discount_percentage}% Off)
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Footer */}
         {items.length > 0 && (
           <div className="cart-footer">
@@ -204,9 +384,15 @@ export default function Cart({ isOpen, onClose, items, onUpdateQty, onRemove, on
                 <span className="cart-summary-value" style={{ color: "#22c55e" }}>−₹{savings.toLocaleString("en-IN")}</span>
               </div>
             )}
+            {appliedCoupon && (
+              <div className="cart-summary-row" style={{ marginTop: 8 }}>
+                <span className="cart-summary-label" style={{ color: "#008060", fontWeight: 600 }}>Coupon Discount ({appliedCoupon.code})</span>
+                <span className="cart-summary-value" style={{ color: "#008060", fontWeight: 600 }}>−₹{discountAmount.toLocaleString("en-IN")}</span>
+              </div>
+            )}
             <div className="cart-total-row">
               <span className="cart-total-label">Total</span>
-              <span className="cart-total-value">₹{totalPrice.toLocaleString("en-IN")}</span>
+              <span className="cart-total-value">₹{finalTotal.toLocaleString("en-IN")}</span>
             </div>
             <button className="cart-checkout-btn" onClick={onCheckout}>Submit Bulk Inquiry →</button>
             <button className="cart-continue-btn" onClick={onClose}>Continue Shopping</button>
