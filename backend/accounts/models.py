@@ -48,13 +48,11 @@ class PrintZone(models.Model):
 class BulkInquiry(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
-        ('AWAITING_PAYMENT', 'Awaiting Payment'),
-        ('PAYMENT_SUBMITTED', 'Payment Submitted'),
-        ('PAYMENT_VERIFIED', 'Payment Verified'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
         ('PROCESSING', 'Processing'),
-        ('PRINTING', 'Printing'),
         ('SHIPPED', 'Shipped'),
-        ('DELIVERED', 'Delivered'),
+        ('COMPLETED', 'Completed'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -80,8 +78,84 @@ class BulkInquiry(models.Model):
     payment_notes = models.TextField(blank=True, null=True)
     payment_submitted_at = models.DateTimeField(blank=True, null=True)
 
+    # Admin remarks and timestamps
+    approved_at = models.DateTimeField(blank=True, null=True)
+    admin_remarks = models.TextField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        from django.utils import timezone
+        
+        if self.status == 'APPROVED' and not self.approved_at:
+            self.approved_at = timezone.now()
+            
+        is_new = self.pk is None
+        old_status = None
+        if not is_new:
+            old_status = BulkInquiry.objects.get(pk=self.pk).status
+        
+        super().save(*args, **kwargs)
+        
+        if self.user:
+            if is_new:
+                CustomerNotification.objects.create(
+                    user=self.user,
+                    inquiry=self,
+                    message="Your inquiry has been received."
+                )
+            elif old_status != self.status:
+                message_map = {
+                    'APPROVED': "Your inquiry has been approved.",
+                    'REJECTED': "Your inquiry has been rejected.",
+                    'PROCESSING': "Your order is being processed.",
+                    'SHIPPED': "Your order has been shipped.",
+                    'COMPLETED': "Your order has been delivered.",
+                }
+                msg = message_map.get(self.status)
+                if msg:
+                    CustomerNotification.objects.create(
+                        user=self.user,
+                        inquiry=self,
+                        message=msg
+                    )
+
     def __str__(self):
         return f"Inquiry/Order #{self.id} - {self.contact_email} (₹{self.total_price}) [{self.status}]"
+
+
+class Payment(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('SUBMITTED', 'Payment Submitted'),
+        ('VERIFIED', 'Payment Verified'),
+        ('FAILED', 'Failed'),
+        ('REFUNDED', 'Refunded'),
+    ]
+
+    inquiry = models.ForeignKey(BulkInquiry, on_delete=models.CASCADE, related_name='payments')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_method = models.CharField(max_length=50)
+    payment_receipt = models.FileField(upload_to='receipts/', blank=True, null=True)
+    payment_notes = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    submitted_at = models.DateTimeField(blank=True, null=True)
+    verified_at = models.DateTimeField(blank=True, null=True)
+    admin_remarks = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Payment #{self.id} for Inquiry #{self.inquiry.id} - ₹{self.amount} ({self.status})"
+
+
+class CustomerNotification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    inquiry = models.ForeignKey(BulkInquiry, on_delete=models.CASCADE, related_name='notifications', null=True, blank=True)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Notification for {self.user.username}: {self.message[:30]}"
 
 
 class PaymentSetting(models.Model):

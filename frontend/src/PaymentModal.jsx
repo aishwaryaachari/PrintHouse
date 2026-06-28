@@ -173,7 +173,7 @@ export default function PaymentModal({ isOpen, onClose, inquiryId, totalPrice, o
       }
     } catch (err) {
       console.error(err);
-      setErrorMsg("Error uploading payment details.");
+      setErrorMsg(err.message || "Error uploading payment details.");
     } finally {
       setLoading(false);
     }

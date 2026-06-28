@@ -426,17 +426,56 @@ def payment_settings_view(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+def map_inquiry_status_for_frontend(inquiry):
+    db_status = inquiry.status
+    latest_payment = inquiry.payments.order_by('-created_at').first()
+    payment_status = latest_payment.status if latest_payment else 'PENDING'
+    
+    if db_status == 'PENDING':
+        return 'Pending', 'PENDING'
+    elif db_status == 'REJECTED':
+        return 'Rejected', 'REJECTED'
+    elif db_status == 'APPROVED':
+        if payment_status == 'PENDING':
+            return 'Approved', 'AWAITING_PAYMENT'
+        elif payment_status == 'SUBMITTED':
+            return 'Payment Submitted', 'PAYMENT_SUBMITTED'
+        elif payment_status == 'VERIFIED':
+            return 'Payment Verified', 'PAYMENT_VERIFIED'
+        elif payment_status == 'FAILED':
+            return 'Payment Failed', 'AWAITING_PAYMENT'
+        elif payment_status == 'REFUNDED':
+            return 'Refunded', 'REJECTED'
+    elif db_status == 'PROCESSING':
+        return 'Processing', 'PROCESSING'
+    elif db_status == 'SHIPPED':
+        return 'Shipped', 'SHIPPED'
+    elif db_status == 'COMPLETED':
+        return 'Completed', 'DELIVERED'
+        
+    return inquiry.get_status_display(), db_status
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def submit_payment_view(request, inquiry_id):
     try:
-        from .models import BulkInquiry
+        from .models import BulkInquiry, Payment, CustomerNotification
         from django.utils import timezone
         
         try:
             inquiry = BulkInquiry.objects.get(id=inquiry_id)
         except BulkInquiry.DoesNotExist:
             return JsonResponse({"error": "Inquiry not found."}, status=404)
+            
+        # Block checkout if inquiry is Pending or Rejected
+        if inquiry.status in ['PENDING', 'REJECTED']:
+            return JsonResponse({"error": "Customer cannot place an order until the inquiry is approved."}, status=400)
+            
+        # If payment is already verified or submitted, reject double-submissions
+        latest_payment = inquiry.payments.order_by('-created_at').first()
+        if latest_payment and latest_payment.status in ['SUBMITTED', 'VERIFIED']:
+            return JsonResponse({"error": "Payment has already been submitted or verified."}, status=400)
             
         payment_method = request.POST.get("payment_method", "").strip()
         payment_notes = request.POST.get("payment_notes", "").strip()
@@ -447,17 +486,36 @@ def submit_payment_view(request, inquiry_id):
         if not payment_receipt:
             return JsonResponse({"error": "Payment receipt screenshot is required."}, status=400)
             
+        # Maintain direct B2B fields for backward compatibility
         inquiry.payment_method = payment_method
         inquiry.payment_notes = payment_notes
         inquiry.payment_receipt = payment_receipt
         inquiry.payment_submitted_at = timezone.now()
-        inquiry.status = 'PAYMENT_SUBMITTED'
         inquiry.save()
+        
+        # Create dedicated Payment record
+        Payment.objects.create(
+            inquiry=inquiry,
+            amount=inquiry.total_price,
+            payment_method=payment_method,
+            payment_receipt=payment_receipt,
+            payment_notes=payment_notes,
+            status='SUBMITTED',
+            submitted_at=timezone.now()
+        )
+        
+        # Notify user
+        if inquiry.user:
+            CustomerNotification.objects.create(
+                user=inquiry.user,
+                inquiry=inquiry,
+                message=f"Your payment proof for inquiry #HOPH-{inquiry.id} has been submitted and is awaiting verification."
+            )
         
         return JsonResponse({
             "success": True,
             "message": "Payment receipt submitted successfully.",
-            "status": inquiry.status
+            "status": "PAYMENT_SUBMITTED"
         })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -474,13 +532,14 @@ def get_inquiries_view(request):
         
         data = []
         for inf in inquiries:
+            display_status, status_code = map_inquiry_status_for_frontend(inf)
             data.append({
                 "id": inf.id,
                 "contact_email": inf.contact_email,
                 "total_price": float(inf.total_price),
                 "total_items": inf.total_items,
-                "status": inf.get_status_display(),
-                "status_code": inf.status,
+                "status": display_status,
+                "status_code": status_code,
                 "company_name": inf.company_name,
                 "contact_person": inf.contact_person,
                 "phone_number": inf.phone_number,
@@ -495,6 +554,137 @@ def get_inquiries_view(request):
                 "items": inf.items
             })
         return JsonResponse({"success": True, "inquiries": data})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def get_orders_view(request):
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required."}, status=401)
+            
+        from .models import BulkInquiry
+        orders = BulkInquiry.objects.filter(
+            user=request.user,
+            status__in=['APPROVED', 'PROCESSING', 'SHIPPED', 'COMPLETED']
+        ).order_by('-created_at')
+        
+        data = []
+        for o in orders:
+            data.append({
+                "id": o.id,
+                "contact_email": o.contact_email,
+                "total_price": float(o.total_price),
+                "total_items": o.total_items,
+                "status": o.get_status_display(),
+                "status_code": o.status,
+                "company_name": o.company_name,
+                "contact_person": o.contact_person,
+                "phone_number": o.phone_number,
+                "gst_number": o.gst_number,
+                "delivery_address": o.delivery_address,
+                "notes": o.notes,
+                "created_at": o.created_at.isoformat(),
+                "items": o.items
+            })
+        return JsonResponse({"success": True, "orders": data})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def get_payment_history_view(request):
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required."}, status=401)
+            
+        from .models import Payment
+        payments = Payment.objects.filter(inquiry__user=request.user).order_by('-created_at')
+        
+        data = []
+        for p in payments:
+            data.append({
+                "id": p.id,
+                "inquiry_id": p.inquiry.id,
+                "amount": float(p.amount),
+                "payment_method": p.payment_method,
+                "payment_receipt": p.payment_receipt.url if p.payment_receipt else None,
+                "payment_notes": p.payment_notes,
+                "status": p.get_status_display(),
+                "status_code": p.status,
+                "submitted_at": p.submitted_at.isoformat() if p.submitted_at else None,
+                "verified_at": p.verified_at.isoformat() if p.verified_at else None,
+                "created_at": p.created_at.isoformat()
+            })
+        return JsonResponse({"success": True, "payments": data})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def notifications_view(request):
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required."}, status=401)
+            
+        from .models import CustomerNotification
+        
+        if request.method == "POST":
+            try:
+                data = json.loads(request.body)
+                notif_id = data.get("notification_id")
+                if notif_id:
+                    CustomerNotification.objects.filter(id=notif_id, user=request.user).update(is_read=True)
+                else:
+                    CustomerNotification.objects.filter(user=request.user).update(is_read=True)
+                return JsonResponse({"success": True})
+            except Exception as e:
+                return JsonResponse({"error": str(e)}, status=400)
+                
+        # GET request
+        notifications = CustomerNotification.objects.filter(user=request.user).order_by('-created_at')
+        data = []
+        for n in notifications:
+            data.append({
+                "id": n.id,
+                "inquiry_id": n.inquiry.id if n.inquiry else None,
+                "message": n.message,
+                "is_read": n.is_read,
+                "created_at": n.created_at.isoformat()
+            })
+        return JsonResponse({"success": True, "notifications": data})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def order_status_view(request, inquiry_id):
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required."}, status=401)
+            
+        from .models import BulkInquiry
+        try:
+            inquiry = BulkInquiry.objects.get(id=inquiry_id, user=request.user)
+        except BulkInquiry.DoesNotExist:
+            return JsonResponse({"error": "Inquiry not found."}, status=404)
+            
+        latest_payment = inquiry.payments.order_by('-created_at').first()
+        
+        return JsonResponse({
+            "success": True,
+            "inquiry_id": inquiry.id,
+            "inquiry_status": inquiry.get_status_display(),
+            "inquiry_status_code": inquiry.status,
+            "payment_status": latest_payment.get_status_display() if latest_payment else "Not Submitted",
+            "payment_status_code": latest_payment.status if latest_payment else None,
+            "created_at": inquiry.created_at.isoformat(),
+            "updated_at": inquiry.updated_at.isoformat(),
+            "approved_at": inquiry.approved_at.isoformat() if inquiry.approved_at else None,
+            "admin_remarks": inquiry.admin_remarks
+        })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
