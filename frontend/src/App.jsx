@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PRODUCT_GROUPS } from "./data";
 import ProductDetail from "./ProductDetail";
 import Cart from "./Cart";
 import AuthModal from "./AuthModal";
@@ -38,9 +39,20 @@ const styles = `
   /* NAV (Upper Container) */
   .moo-nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 48px; border-bottom: 1px solid var(--border-color); background: var(--nav-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); position: sticky; top: 0; z-index: 100; transition: all 0.3s ease; }
   .moo-nav-logo { font-family: 'Cinzel', serif; font-size: 24px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dark); }
-  .moo-nav-links { display: flex; gap: 40px; list-style: none; }
-  .moo-nav-links a { font-size: 13px; font-weight: 500; color: var(--text-dark); text-decoration: none; text-transform: uppercase; letter-spacing: 1.5px; transition: color 0.3s ease, opacity 0.3s ease; opacity: 0.8; }
-  .moo-nav-links a:hover { opacity: 1; color: var(--accent); }
+  /* NAV LINKS */
+  .moo-nav-links { display: flex; gap: 0; list-style: none; align-items: center; }
+  .moo-nav-links > li { position: relative; }
+  .moo-nav-links > li > a { display: block; padding: 8px 18px; font-size: 13px; font-weight: 500; color: var(--text-dark); text-decoration: none; text-transform: uppercase; letter-spacing: 1.5px; transition: color 0.3s ease, opacity 0.3s ease; opacity: 0.8; }
+  .moo-nav-links > li > a:hover { opacity: 1; color: var(--accent); }
+
+  /* MEGA MENU */
+  .moo-mega { position: absolute; top: calc(100% + 12px); left: 50%; transform: translateX(-50%); background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.12); padding: 28px 32px; min-width: 680px; display: none; z-index: 200; opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none; }
+  .moo-mega::before { content: ''; position: absolute; top: -6px; left: 50%; transform: translateX(-50%); width: 12px; height: 12px; background: var(--bg-white); border-top: 1px solid var(--border-color); border-left: 1px solid var(--border-color); rotate: 45deg; }
+  .moo-nav-links > li:hover .moo-mega { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; opacity: 1; pointer-events: all; }
+  .moo-mega-group-title { font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+  .moo-mega-item { display: block; font-size: 13px; color: var(--text-light); text-decoration: none; padding: 6px 0; font-weight: 400; transition: color 0.2s, padding-left 0.2s; cursor: pointer; }
+  .moo-mega-item:hover { color: var(--text-dark); padding-left: 6px; }
+
   /* NAV CART ICON */
   .moo-nav-cart { position: relative; background: none; border: none; cursor: pointer; padding: 8px; border-radius: 4px; color: var(--text-dark); transition: background 0.2s; display: flex; align-items: center; gap: 6px; }
   .moo-nav-cart:hover { background: var(--bg-offwhite); }
@@ -64,18 +76,23 @@ const styles = `
   .moo-usp-item { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 2px; }
 
   /* CATEGORIES */
-  .moo-categories { padding: 100px 48px; text-align: center; max-width: 1400px; margin: 0 auto; }
-  .moo-cat-title { font-family: 'Cinzel', serif; font-size: 48px; font-weight: 600; margin-bottom: 16px; color: var(--text-dark); }
-  .moo-cat-sub { font-size: 16px; color: var(--text-light); margin-bottom: 80px; font-weight: 300; letter-spacing: 0.5px; }
-  
-  .moo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px; }
-  .moo-card { text-align: left; cursor: pointer; group; }
-  .moo-card-img-wrap { width: 100%; aspect-ratio: 3/4; overflow: hidden; background: var(--bg-offwhite); margin-bottom: 24px; border-radius: 8px; }
+  .moo-categories { padding: 80px 48px 100px; max-width: 1400px; margin: 0 auto; }
+  .moo-cat-title { font-family: 'Cinzel', serif; font-size: 48px; font-weight: 600; margin-bottom: 16px; color: var(--text-dark); text-align: center; }
+  .moo-cat-sub { font-size: 16px; color: var(--text-light); margin-bottom: 64px; font-weight: 300; letter-spacing: 0.5px; text-align: center; }
+
+  /* CATEGORY GROUP SECTIONS */
+  .moo-section { margin-bottom: 72px; }
+  .moo-section-label { font-size: 10px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); margin-bottom: 28px; display: flex; align-items: center; gap: 16px; }
+  .moo-section-label::after { content: ''; flex: 1; height: 1px; background: var(--border-color); }
+
+  .moo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 28px; }
+  .moo-card { text-align: left; cursor: pointer; }
+  .moo-card-img-wrap { width: 100%; aspect-ratio: 3/4; overflow: hidden; background: var(--bg-offwhite); margin-bottom: 18px; border-radius: 8px; }
   .moo-card-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
   .moo-card:hover .moo-card-img { transform: scale(1.08); }
-  .moo-card-title { font-family: 'Cinzel', serif; font-size: 22px; font-weight: 600; margin-bottom: 12px; color: var(--text-dark); }
-  .moo-card-desc { font-size: 14px; color: var(--text-light); line-height: 1.6; margin-bottom: 20px; font-weight: 300; }
-  .moo-card-link { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dark); border-bottom: 1px solid var(--text-dark); padding-bottom: 4px; display: inline-block; transition: color 0.3s, border-color 0.3s; }
+  .moo-card-title { font-family: 'Cinzel', serif; font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--text-dark); line-height: 1.3; }
+  .moo-card-desc { font-size: 13px; color: var(--text-light); line-height: 1.6; margin-bottom: 14px; font-weight: 300; }
+  .moo-card-link { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dark); border-bottom: 1px solid var(--text-dark); padding-bottom: 3px; display: inline-block; transition: color 0.3s, border-color 0.3s; }
   .moo-card:hover .moo-card-link { color: var(--accent); border-color: var(--accent); }
 
   /* INFO SECTION */
@@ -243,10 +260,19 @@ export default function App() {
       <nav className="moo-nav">
         <div className="moo-nav-logo">Hari Om Print House</div>
         <ul className="moo-nav-links">
-          <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-bottles'); }}>Bottles</a></li>
-          <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-mugs'); }}>Mugs</a></li>
-          <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-diaries'); }}>Diaries</a></li>
-          <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-pens'); }}>Pens</a></li>
+          <li>
+            <a href="#" onClick={e => e.preventDefault()}>Products ▾</a>
+            <div className="moo-mega">
+              {PRODUCT_GROUPS.map(g => (
+                <div key={g.group}>
+                  <div className="moo-mega-group-title">{g.group}</div>
+                  {g.items.map(item => (
+                    <span key={item.id} className="moo-mega-item" onClick={() => setView(`pdp-${item.id}`)}>{item.label}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </li>
           <li><a href="#" onClick={(e) => { e.preventDefault(); toggleTheme(); }}>{theme === 'dark' ? '☀️ Light' : '🌙 Dark'}</a></li>
         </ul>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
@@ -290,44 +316,45 @@ export default function App() {
       <section className="moo-categories">
         <h2 className="moo-cat-title">Explore the Collection</h2>
         <p className="moo-cat-sub">High-quality products designed to showcase your brand beautifully.</p>
-        
-        <div className="moo-grid">
-          <div className="moo-card">
-            <div className="moo-card-img-wrap">
-              <img src="/bottle_white.png" alt="Steel Bottles" className="moo-card-img" />
-            </div>
-            <h3 className="moo-card-title">Steel Bottles</h3>
-            <p className="moo-card-desc">Matte finish, double-walled insulation. Perfect for laser engraving or vibrant wrap printing.</p>
-            <span className="moo-card-link" style={{cursor:'pointer'}} onClick={() => setView('pdp-bottles')}>Shop Bottles →</span>
-          </div>
 
-          <div className="moo-card">
-            <div className="moo-card-img-wrap">
-              <img src="/diary_black.png" alt="Premium Diaries" className="moo-card-img" />
+        {PRODUCT_GROUPS.map(g => (
+          <div key={g.group} className="moo-section">
+            <div className="moo-section-label">{g.group}</div>
+            <div className="moo-grid">
+              {g.items.map(item => {
+                const PRODUCTS_MAP = {
+                  bottles:        { img: '/products/bottles/bottle_white.png',                   desc: 'Double-walled insulated bottles. Perfect for laser engraving or vibrant wrap printing.' },
+                  mugs:           { img: '/products/mugs/mug_white.png',                          desc: 'Classic ceramic mugs. High-definition sublimation ensures your logo never fades.' },
+                  diaries:        { img: '/products/diaries/diary_leather_black.png',             desc: 'Premium leather hardcover diary with ribbon bookmark and 80gsm ruled pages.' },
+                  spiral_diaries: { img: '/products/diaries/spiral_black.png',                   desc: 'Spiral-bound notebooks that lay flat. Ideal for meetings and everyday notes.' },
+                  pens:           { img: '/products/pens/pen_black.png',                         desc: 'Heavy metallic rollerball pens ideal for laser engraving and gifting.' },
+                  business_cards: { img: '/products/business_cards/card_white.png',              desc: 'Premium 350gsm cards with matte, gloss, spot UV and embossed finishes.' },
+                  id_cards:       { img: '/products/id_cards/pvc_id_card.png',                   desc: 'Durable PVC ID cards with full-colour print and optional RFID chip.' },
+                  lanyards:       { img: '/products/lanyards/polyester_lanyard_blue.png',        desc: 'Full-colour sublimation polyester & satin lanyards for events and offices.' },
+                  tshirts:        { img: '/products/tshirts/polo_white.png',                     desc: '220gsm cotton-polyester polo shirts with chest embroidery or screen print.' },
+                  bags:           { img: '/products/bags/tote_bag.png',                          desc: 'Tote bags, laptop bags and backpacks fully customised with your logo.' },
+                  caps:           { img: '/products/caps/cap_black.png',                         desc: 'Structured 6-panel baseball caps with front panel embroidery.' },
+                  stickers:       { img: '/products/stickers/vinyl_sticker.png',                 desc: 'Weatherproof vinyl stickers in glossy, matte and holographic finishes.' },
+                  packaging:      { img: '/products/packaging/gift_box_black.png',               desc: 'Premium branded gift boxes and paper bags that elevate every unboxing.' },
+                  keychains:      { img: '/products/keychains/metal_keychain.png',               desc: 'Acrylic, metal, wood and leather keychains with logo engraving.' },
+                  awards:         { img: '/products/awards/crystal_trophy.png',                  desc: 'Crystal trophies, wooden plaques and medals with precision engraving.' },
+                  office:         { img: '/products/office/mouse_pad_black.png',                 desc: 'Mouse pads, desk calendars and office accessories with full-colour print.' },
+                };
+                const meta = PRODUCTS_MAP[item.id] || { img: '/products/bottles/stainless_steel_bottle_silver.png', desc: '' };
+                return (
+                  <div key={item.id} className="moo-card" onClick={() => setView(`pdp-${item.id}`)}>
+                    <div className="moo-card-img-wrap">
+                      <img src={meta.img} alt={item.label} className="moo-card-img" />
+                    </div>
+                    <h3 className="moo-card-title">{item.label}</h3>
+                    <p className="moo-card-desc">{meta.desc}</p>
+                    <span className="moo-card-link">Shop Now →</span>
+                  </div>
+                );
+              })}
             </div>
-            <h3 className="moo-card-title">Premium Diaries</h3>
-            <p className="moo-card-desc">Italian leather and thick, tactile paper stock. Add luxurious gold foil or blind embossing.</p>
-            <span className="moo-card-link" style={{cursor:'pointer'}} onClick={() => setView('pdp-diaries')}>Shop Diaries →</span>
           </div>
-
-          <div className="moo-card">
-            <div className="moo-card-img-wrap">
-              <img src="/mug_white.png" alt="Ceramic Mugs" className="moo-card-img" />
-            </div>
-            <h3 className="moo-card-title">Ceramic Mugs</h3>
-            <p className="moo-card-desc">Classic, weighty, and elegant. Our high-definition sublimation ensures your logo never fades.</p>
-            <span className="moo-card-link" style={{cursor:'pointer'}} onClick={() => setView('pdp-mugs')}>Shop Mugs →</span>
-          </div>
-
-          <div className="moo-card">
-            <div className="moo-card-img-wrap">
-              <img src="/pen_black.png" alt="Logo Pens" className="moo-card-img" />
-            </div>
-            <h3 className="moo-card-title">Logo Pens</h3>
-            <p className="moo-card-desc">Smooth-writing premium rollerball pens with a heavy metallic body for laser engraving.</p>
-            <span className="moo-card-link" style={{cursor:'pointer'}} onClick={() => setView('pdp-pens')}>Shop Pens →</span>
-          </div>
-        </div>
+        ))}
       </section>
 
       {/* INFO SECTION */}
@@ -355,7 +382,7 @@ export default function App() {
           <div>
             <div className="moo-footer-heading" style={{ fontSize: "12px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "16px" }}>Products</div>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
-              {["Steel Bottles", "Ceramic Mugs", "Premium Diaries", "Logo Pens"].map((i) => <li key={i}><a href="#" style={{ color: "var(--text-light)", textDecoration: "none", fontSize: "13px" }}>{i}</a></li>)}
+              {["Steel Bottles", "Ceramic Mugs", "Business Cards", "ID Cards", "Lanyards", "T-Shirts", "Bags", "Caps", "Keychains", "Awards"].map((i) => <li key={i}><a href="#" style={{ color: "var(--text-light)", textDecoration: "none", fontSize: "13px" }}>{i}</a></li>)}
             </ul>
           </div>
           <div>

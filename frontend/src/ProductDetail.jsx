@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
-import { PRODUCTS } from "./data";
+import { PRODUCTS, PRODUCT_GROUPS } from "./data";
 
 const pdpStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Outfit:wght@300;400;500;600&family=Inter:wght@300;400;500;600&family=Pacifico&family=Montserrat:wght@400;600&family=Oswald:wght@400;600&family=Playfair+Display:wght@400;600;700&display=swap');
@@ -262,21 +262,37 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
       {/* NAV */}
       <nav className="pdp-nav">
         <div className="pdp-nav-logo" onClick={onBack}>Hari Om Print House</div>
-        <ul style={{ display: "flex", gap: 32, listStyle: "none" }}>
-          {["Bottles", "Mugs", "Diaries", "Pens"].map(l => (
-            <li key={l}>
-              <a 
-                href="#" 
-                className="pdp-nav-link"
-                onClick={(e) => { e.preventDefault(); onNavigate && onNavigate(l.toLowerCase()); }} 
-                style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}
-              >
-                {l}
-              </a>
-            </li>
-          ))}
+        <ul style={{ display: "flex", gap: 0, listStyle: "none", alignItems: 'center' }}>
+          <li style={{ position: 'relative' }}>
+            <a
+              href="#"
+              onClick={(e) => e.preventDefault()}
+              style={{ display: 'block', padding: '8px 18px', fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px", opacity: 0.8 }}
+            >
+              Products ▾
+            </a>
+            <div className="moo-mega" style={{ position: 'absolute', top: 'calc(100% + 12px)', left: '50%', transform: 'translateX(-50%)', background: 'var(--bg-white)', border: '1px solid var(--border-color)', borderRadius: 8, boxShadow: '0 20px 60px rgba(0,0,0,0.12)', padding: '28px 32px', minWidth: 680, zIndex: 200, display: 'none' }}
+              onMouseEnter={e => e.currentTarget.style.display = 'grid'}
+            >
+              <style>{`.pdp-nav li:hover .moo-mega { display: grid !important; grid-template-columns: repeat(4,1fr); gap: 32px; }`}</style>
+              {PRODUCT_GROUPS.map(g => (
+                <div key={g.group}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border-color)' }}>{g.group}</div>
+                  {g.items.map(item => (
+                    <span
+                      key={item.id}
+                      onClick={() => onNavigate && onNavigate(item.id)}
+                      style={{ display: 'block', fontSize: 13, color: 'var(--text-light)', padding: '6px 0', cursor: 'pointer', transition: 'color 0.2s' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-dark)'; e.currentTarget.style.paddingLeft = '6px'; }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.paddingLeft = '0'; }}
+                    >{item.label}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </li>
           <li>
-            <a href="#" className="pdp-nav-link" onClick={(e) => { e.preventDefault(); toggleTheme && toggleTheme(); }} style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}>
+            <a href="#" className="pdp-nav-link" onClick={(e) => { e.preventDefault(); toggleTheme && toggleTheme(); }} style={{ display: 'block', padding: '8px 18px', fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}>
               {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
             </a>
           </li>
