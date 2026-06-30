@@ -169,6 +169,7 @@ export default function Dashboard({ onBack }) {
   const getStatusClass = (code) => {
     switch (code) {
       case 'PENDING': return 'pending';
+      case 'APPROVED': return 'awaiting';
       case 'AWAITING_PAYMENT': return 'awaiting';
       case 'PAYMENT_SUBMITTED': return 'submitted';
       case 'PAYMENT_VERIFIED': return 'verified';
@@ -176,6 +177,8 @@ export default function Dashboard({ onBack }) {
       case 'PRINTING': return 'printing';
       case 'SHIPPED': return 'shipped';
       case 'DELIVERED': return 'delivered';
+      case 'COMPLETED': return 'delivered';
+      case 'REJECTED': return 'awaiting'; 
       default: return 'pending';
     }
   };

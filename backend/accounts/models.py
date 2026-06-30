@@ -47,11 +47,15 @@ class PrintZone(models.Model):
 
 class BulkInquiry(models.Model):
     STATUS_CHOICES = [
-        ('PENDING', 'Pending'),
-        ('APPROVED', 'Approved'),
+        ('PENDING', 'Pending (Inquiry)'),
+        ('APPROVED', 'Approved (Awaiting Payment)'),
         ('REJECTED', 'Rejected'),
+        ('PAYMENT_SUBMITTED', 'Payment Submitted'),
+        ('PAYMENT_VERIFIED', 'Payment Verified / Confirmed'),
         ('PROCESSING', 'Processing'),
+        ('PRINTING', 'Printing'),
         ('SHIPPED', 'Shipped'),
+        ('DELIVERED', 'Delivered'),
         ('COMPLETED', 'Completed'),
     ]
 
