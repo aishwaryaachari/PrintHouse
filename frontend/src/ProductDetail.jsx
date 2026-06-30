@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
-import { PRODUCTS } from "./data";
+import { PRODUCTS, PRODUCT_GROUPS } from "./data";
 
 const pdpStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Outfit:wght@300;400;500;600&family=Inter:wght@300;400;500;600&family=Pacifico&family=Montserrat:wght@400;600&family=Oswald:wght@400;600&family=Playfair+Display:wght@400;600;700&display=swap');
@@ -111,7 +111,8 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
       .catch(err => console.error("Error loading products from SQLite DB:", err));
   }, []);
 
-  const activeCatalog = dbProducts || PRODUCTS;
+  // Always use the local data.js catalog to preserve the user's added products and correct images
+  const activeCatalog = PRODUCTS;
   const PRODUCT = activeCatalog[activeProductId] || activeCatalog.bottles;
   const IMAGES = PRODUCT.images;
   const PRINT_ZONES = PRODUCT.printZones;
@@ -638,7 +639,7 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
             </li>
           ))}
           <li>
-            <a href="#" className="pdp-nav-link" onClick={(e) => { e.preventDefault(); toggleTheme && toggleTheme(); }} style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}>
+            <a href="#" className="pdp-nav-link" onClick={(e) => { e.preventDefault(); toggleTheme && toggleTheme(); }} style={{ display: 'block', padding: '8px 18px', fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}>
               {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
             </a>
           </li>
