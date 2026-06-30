@@ -96,29 +96,85 @@ const pdpStyles = `
 
 const CANVAS_W = 350;
 
-export default function ProductDetail({ onBack, onNavigate, onCustomize, activeProductId = 'bottles', theme, toggleTheme, onAddToCart, cartCount = 0, onOpenCart, user, onOpenAuth, onLogout }) {
-  const PRODUCT = PRODUCTS[activeProductId] || PRODUCTS.bottles;
+export default function ProductDetail({ onBack, onNavigate, onCustomize, activeProductId = 'bottles', theme, toggleTheme, onAddToCart, cartCount = 0, onOpenCart, user, onOpenAuth, onLogout, onGoToDashboard }) {
+  // DB Catalog State
+  const [dbProducts, setDbProducts] = useState(null);
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/api/auth/products/")
+      .then(res => res.json())
+      .then(data => {
+        if (data && !data.error) {
+          setDbProducts(data);
+        }
+      })
+      .catch(err => console.error("Error loading products from SQLite DB:", err));
+  }, []);
+
+  const activeCatalog = dbProducts || PRODUCTS;
+  const PRODUCT = activeCatalog[activeProductId] || activeCatalog.bottles;
   const IMAGES = PRODUCT.images;
   const PRINT_ZONES = PRODUCT.printZones;
 
+  const getSavedDesignVal = (key, fallback) => {
+    try {
+      const saved = localStorage.getItem(`hoph_design_${activeProductId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed[key] !== undefined) {
+          return parsed[key];
+        }
+      }
+    } catch (e) {}
+    return fallback;
+  };
+
   const [activeImg, setActiveImg] = useState(0);
   const [activeTab, setActiveTab] = useState("Description");
-  const [selSize, setSelSize] = useState(PRODUCT.sizes[0]);
-  const [selColor, setSelColor] = useState(0);
-  const [selCustom, setSelCustom] = useState([...PRODUCT.customizations]);
-  const [textColor, setTextColor] = useState("#111111");
-  const [fontFamily, setFontFamily] = useState("Inter");
-  const [selQty, setSelQty] = useState(PRODUCT.quantities[0]);
+  const [selSize, setSelSize] = useState(() => getSavedDesignVal("selSize", PRODUCT.sizes[0]));
+  const [selColor, setSelColor] = useState(() => getSavedDesignVal("selColor", 0));
+  const [selCustom, setSelCustom] = useState(() => getSavedDesignVal("selCustom", [...PRODUCT.customizations]));
+  const [textColor, setTextColor] = useState(() => getSavedDesignVal("textColor", "#111111"));
+  const [fontFamily, setFontFamily] = useState(() => getSavedDesignVal("fontFamily", "Inter"));
+  const [selQty, setSelQty] = useState(() => getSavedDesignVal("selQty", PRODUCT.quantities[0]));
   const canvasRef = useRef(null);
   const [fabricCanvas, setFabricCanvas] = useState(null);
   const [printZoneObjs, setPrintZoneObjs] = useState([]);
+
+  // Customizer States
+  const [outOfBounds, setOutOfBounds] = useState(false);
+  const [rotationAngle, setRotationAngle] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+
+  // Sync state if catalog/activeProduct changes
+  useEffect(() => {
+    if (PRODUCT) {
+      const saved = localStorage.getItem(`hoph_design_${activeProductId}`);
+      let savedParsed = null;
+      if (saved) {
+        try { savedParsed = JSON.parse(saved); } catch {}
+      }
+      setSelSize(savedParsed && savedParsed.selSize !== undefined ? savedParsed.selSize : PRODUCT.sizes[0]);
+      setSelColor(savedParsed && savedParsed.selColor !== undefined ? savedParsed.selColor : 0);
+      setSelCustom(savedParsed && savedParsed.selCustom !== undefined ? savedParsed.selCustom : [...PRODUCT.customizations]);
+      setSelQty(savedParsed && savedParsed.selQty !== undefined ? savedParsed.selQty : PRODUCT.quantities[0]);
+      setActiveImg(0);
+    }
+  }, [activeProductId, dbProducts]);
 
   const totalPrice = PRODUCT.pricePerItem[selQty] * selQty;
 
   const handleAddToCart = () => {
     const cartId = `${activeProductId}-${selSize}-${PRODUCT.colors[selColor].name}`;
+    let designJson = null;
+    if (fabricCanvas) {
+      designJson = fabricCanvas.toJSON();
+    }
     onAddToCart && onAddToCart({
       cartId,
+      productId: activeProductId,
       name: PRODUCT.name,
       image: PRODUCT.colors[selColor]?.image || PRODUCT.images[0],
       size: selSize,
@@ -128,6 +184,7 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
       minQty: PRODUCT.quantities[0],
       pricePerItem: PRODUCT.pricePerItem[selQty],
       allPrices: PRODUCT.pricePerItem,
+      design: designJson,
     });
   };
 
@@ -144,16 +201,299 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
     };
   }, []);
 
+  // History Helper (Undo/Redo)
+  const saveState = (canvasInstance) => {
+    const canvas = canvasInstance || fabricCanvas;
+    if (!canvas) return;
+    const json = JSON.stringify(canvas.toJSON());
+    setHistory(prev => {
+      const newHistory = prev.slice(0, historyIdx + 1);
+      newHistory.push(json);
+      setHistoryIdx(newHistory.length - 1);
+      return newHistory;
+    });
+  };
+
+  const undo = () => {
+    if (historyIdx > 0 && fabricCanvas) {
+      const prevIdx = historyIdx - 1;
+      fabricCanvas.loadFromJSON(history[prevIdx]).then(() => {
+        fabricCanvas.renderAll();
+        setHistoryIdx(prevIdx);
+      });
+    }
+  };
+
+  const redo = () => {
+    if (historyIdx < history.length - 1 && fabricCanvas) {
+      const nextIdx = historyIdx + 1;
+      fabricCanvas.loadFromJSON(history[nextIdx]).then(() => {
+        fabricCanvas.renderAll();
+        setHistoryIdx(nextIdx);
+      });
+    }
+  };
+
+  // Keyboard Shortcuts for Undo/Redo (Ctrl+Z / Ctrl+Y)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [history, historyIdx, fabricCanvas]);
+
+  // Layer Controls
+  const bringToFront = () => {
+    const activeObj = fabricCanvas?.getActiveObject();
+    if (activeObj) {
+      fabricCanvas.bringObjectToFront(activeObj);
+      fabricCanvas.renderAll();
+      saveState();
+    }
+  };
+
+  const sendToBack = () => {
+    const activeObj = fabricCanvas?.getActiveObject();
+    if (activeObj) {
+      fabricCanvas.sendObjectToBack(activeObj);
+      fabricCanvas.renderAll();
+      saveState();
+    }
+  };
+
+  const moveForward = () => {
+    const activeObj = fabricCanvas?.getActiveObject();
+    if (activeObj) {
+      fabricCanvas.bringObjectForward(activeObj);
+      fabricCanvas.renderAll();
+      saveState();
+    }
+  };
+
+  const moveBackward = () => {
+    const activeObj = fabricCanvas?.getActiveObject();
+    if (activeObj) {
+      fabricCanvas.sendObjectBackward(activeObj);
+      fabricCanvas.renderAll();
+      saveState();
+    }
+  };
+
+  // Lock / Unlock Position
+  const toggleLock = () => {
+    const activeObj = fabricCanvas?.getActiveObject();
+    if (activeObj) {
+      const nextLock = !isLocked;
+      activeObj.set({
+        lockMovementX: nextLock,
+        lockMovementY: nextLock,
+        lockScalingX: nextLock,
+        lockScalingY: nextLock,
+        lockRotation: nextLock,
+        hasControls: !nextLock
+      });
+      setIsLocked(nextLock);
+      fabricCanvas.renderAll();
+      saveState();
+    }
+  };
+
+  // Safety wrapper for back and category navigation
+  const handleBackSafe = (e) => {
+    if (e) e.preventDefault();
+    if (fabricCanvas) {
+      const objects = fabricCanvas.getObjects().filter(o => o.id !== 'guide-v' && o.id !== 'guide-h');
+      if (objects.length > 0) {
+        const confirmLeave = window.confirm("You have a customized design. Are you sure you want to leave this page?");
+        if (!confirmLeave) return;
+      }
+    }
+    onBack && onBack();
+  };
+
+  const handleNavigateSafe = (category) => {
+    if (fabricCanvas) {
+      const objects = fabricCanvas.getObjects().filter(o => o.id !== 'guide-v' && o.id !== 'guide-h');
+      if (objects.length > 0) {
+        const confirmLeave = window.confirm("You have a customized design. Are you sure you want to leave this page?");
+        if (!confirmLeave) return;
+      }
+    }
+    onNavigate && onNavigate(category);
+  };
+
+  // Warn before unloading / reloading tab if canvas has user designs
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (fabricCanvas) {
+        const objects = fabricCanvas.getObjects().filter(o => o.id !== 'guide-v' && o.id !== 'guide-h');
+        if (objects.length > 0) {
+          e.preventDefault();
+          e.returnValue = "You have a customized design in progress. Are you sure you want to leave?";
+          return e.returnValue;
+        }
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [fabricCanvas, historyIdx]);
+
   // Init Fabric canvas
   useEffect(() => {
     let c = null;
     let mounted = true;
+    
+    const setupListeners = (canvasObj) => {
+      const SNAP_THRESHOLD = 15;
+      const addGuideLines = (x, y) => {
+        canvasObj.getObjects().filter(o => o.id === 'guide-h' || o.id === 'guide-v').forEach(o => canvasObj.remove(o));
+        
+        if (x !== null) {
+          const vLine = new fabric.Line([x, 0, x, canvasObj.height], {
+            stroke: '#dc2626',
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+            strokeDashArray: [4, 4],
+            id: 'guide-v'
+          });
+          canvasObj.add(vLine);
+        }
+        if (y !== null) {
+          const hLine = new fabric.Line([0, y, canvasObj.width, y], {
+            stroke: '#dc2626',
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+            strokeDashArray: [4, 4],
+            id: 'guide-h'
+          });
+          canvasObj.add(hLine);
+        }
+      };
+
+      const removeGuideLines = () => {
+        canvasObj.getObjects().filter(o => o.id === 'guide-h' || o.id === 'guide-v').forEach(o => canvasObj.remove(o));
+      };
+
+      canvasObj.on('object:moving', (e) => {
+        const obj = e.target;
+        if (!obj || obj.id === 'guide-h' || obj.id === 'guide-v') return;
+
+        const canvasCenterX = canvasObj.width / 2;
+        const canvasCenterY = canvasObj.height / 2;
+        const objCenter = obj.getCenterPoint();
+        let snapX = null;
+        let snapY = null;
+
+        if (PRODUCT.snapGuidesEnabled !== false && Math.abs(objCenter.x - canvasCenterX) < SNAP_THRESHOLD) {
+          obj.set({ left: canvasCenterX - obj.getScaledWidth() / 2 });
+          snapX = canvasCenterX;
+        }
+        if (PRODUCT.snapGuidesEnabled !== false && Math.abs(objCenter.y - canvasCenterY) < SNAP_THRESHOLD) {
+          obj.set({ top: canvasCenterY - obj.getScaledHeight() / 2 });
+          snapY = canvasCenterY;
+        }
+
+        if (PRODUCT.snapGuidesEnabled !== false && (snapX !== null || snapY !== null)) {
+          addGuideLines(snapX, snapY);
+        } else {
+          removeGuideLines();
+        }
+        canvasObj.renderAll();
+      });
+
+      canvasObj.on('object:scaling', (e) => {
+        const obj = e.target;
+        if (obj) {
+          const maxDim = PRODUCT.maxLogoSize || 150;
+          if (obj.getScaledWidth() > maxDim) obj.scaleToWidth(maxDim);
+          if (obj.getScaledHeight() > maxDim) obj.scaleToHeight(maxDim);
+        }
+      });
+
+      canvasObj.on('object:rotating', (e) => {
+        const obj = e.target;
+        if (obj) {
+          setRotationAngle(Math.round(obj.angle || 0));
+        }
+      });
+
+      canvasObj.on('selection:created', (ev) => {
+        const obj = ev.selected[0];
+        if (obj) {
+          setRotationAngle(Math.round(obj.angle || 0));
+          setIsLocked(!!obj.lockMovementX);
+        }
+      });
+
+      canvasObj.on('selection:updated', (ev) => {
+        const obj = ev.selected[0];
+        if (obj) {
+          setRotationAngle(Math.round(obj.angle || 0));
+          setIsLocked(!!obj.lockMovementX);
+        }
+      });
+
+      canvasObj.on('selection:cleared', () => {
+        setRotationAngle(0);
+        setIsLocked(false);
+      });
+
+      canvasObj.on('mouse:up', () => {
+        removeGuideLines();
+        canvasObj.renderAll();
+      });
+
+      canvasObj.on('object:added', (ev) => {
+        if (ev.target && ev.target.id !== 'guide-v' && ev.target.id !== 'guide-h') {
+          const jsonState = JSON.stringify(canvasObj.toJSON());
+          setHistory(prev => {
+            const newHist = prev.slice(0, historyIdx + 1);
+            newHist.push(jsonState);
+            setHistoryIdx(newHist.length - 1);
+            return newHist;
+          });
+        }
+      });
+
+      canvasObj.on('object:modified', () => {
+        const jsonState = JSON.stringify(canvasObj.toJSON());
+        setHistory(prev => {
+          const newHist = prev.slice(0, historyIdx + 1);
+          newHist.push(jsonState);
+          setHistoryIdx(newHist.length - 1);
+          return newHist;
+        });
+      });
+
+      canvasObj.on('object:removed', (ev) => {
+        if (ev.target && ev.target.id !== 'guide-v' && ev.target.id !== 'guide-h') {
+          const jsonState = JSON.stringify(canvasObj.toJSON());
+          setHistory(prev => {
+            const newHist = prev.slice(0, historyIdx + 1);
+            newHist.push(jsonState);
+            setHistoryIdx(newHist.length - 1);
+            return newHist;
+          });
+        }
+      });
+    };
+
     const initCanvas = () => {
       if (!canvasRef.current) return;
       c = new fabric.Canvas(canvasRef.current, {
         width: CANVAS_W,
-        height: CANVAS_W, // Temporary height
-        backgroundColor: null, // Transparent to show CSS background
+        height: CANVAS_W,
+        backgroundColor: null,
       });
 
       const currentColor = PRODUCT.colors[selColor] || PRODUCT.colors[0];
@@ -162,20 +502,15 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
       const htmlImg = new Image();
       htmlImg.src = activeImageSrc;
       htmlImg.onload = () => {
-        // Guard: skip if the canvas was disposed before the image loaded
         if (!mounted || !c || c._disposed) return;
 
         const imgW = htmlImg.naturalWidth || 800;
         const imgH = htmlImg.naturalHeight || 800;
-
-        // Calculate scale to fit container width exactly
         const scale = CANVAS_W / imgW;
         const finalHeight = imgH * scale;
         
-        // Resize canvas to match the image aspect ratio exactly
         c.setDimensions({ width: CANVAS_W, height: finalHeight });
         
-        // Use an ultra-reliable CSS background approach instead of Fabric image scaling
         const wrap = document.getElementById("pdp-canvas-wrap-id");
         if (wrap) {
           wrap.style.backgroundImage = `url("${activeImageSrc}")`;
@@ -184,7 +519,6 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
           wrap.style.backgroundPosition = "center top";
         }
         
-        // Handle overlay tinting for customizer canvas
         const tintOverlay = document.getElementById("pdp-canvas-tint-overlay");
         if (tintOverlay) {
           if (!currentColor.image && currentColor.hex !== '#ffffff') {
@@ -196,48 +530,76 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
           }
         }
 
-        const zones = [];
-        PRINT_ZONES.forEach(zoneConfig => {
-          const zone = new fabric.Rect({
-            left: zoneConfig.px * CANVAS_W,
-            top: zoneConfig.py * finalHeight,
-            width: zoneConfig.pWidth * CANVAS_W,
-            height: zoneConfig.pHeight * finalHeight,
-            angle: zoneConfig.angle,
-            fill: "transparent",
-            stroke: "transparent", // Hidden as requested
-            strokeWidth: 0,
-            selectable: false,
-            evented: false,
-          });
-          c.add(zone);
-          zones.push(zone);
-        });
-
         c.renderAll();
+
+        const savedDesignKey = `hoph_design_${activeProductId}`;
+        const savedDesign = localStorage.getItem(savedDesignKey);
+        if (savedDesign) {
+          try {
+            const parsed = JSON.parse(savedDesign);
+            if (parsed.canvas) {
+              c.loadFromJSON(parsed.canvas).then(() => {
+                if (!mounted) return;
+                c.renderAll();
+                setupListeners(c);
+                setFabricCanvas(c);
+                setHistory([JSON.stringify(c.toJSON())]);
+                setHistoryIdx(0);
+              });
+              return;
+            }
+          } catch (e) {
+            console.error("Error restoring design:", e);
+          }
+        }
+
+        setupListeners(c);
         setFabricCanvas(c);
-        setPrintZoneObjs(zones);
+        setHistory([JSON.stringify(c.toJSON())]);
+        setHistoryIdx(0);
       };
     };
 
     initCanvas();
     return () => {
+      mounted = false;
       if (c) c.dispose();
     };
-  }, [activeProductId, selColor]);
+  }, [activeProductId, selColor, dbProducts]);
+
+  // Auto-save user customization progress
+  useEffect(() => {
+    if (fabricCanvas) {
+      const dataToSave = {
+        selSize,
+        selColor,
+        selCustom,
+        selQty,
+        textColor,
+        fontFamily,
+        canvas: fabricCanvas.toJSON()
+      };
+      localStorage.setItem(`hoph_design_${activeProductId}`, JSON.stringify(dataToSave));
+    }
+  }, [selSize, selColor, selCustom, selQty, textColor, fontFamily, fabricCanvas, historyIdx]);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file || !fabricCanvas || printZoneObjs.length === 0) return;
+    if (!file || !fabricCanvas) return;
     const reader = new FileReader();
     reader.onload = async (f) => {
       const img = await fabric.FabricImage.fromURL(f.target.result);
-      // default to first zone for initial placement
-      const targetZone = printZoneObjs[0];
-      img.scaleToWidth(targetZone.width * 0.8);
+      
+      const defaultLogoSize = PRODUCT.defaultLogoSize || 120;
+      img.scaleToWidth(defaultLogoSize);
+
+      // Centered position
+      const centerLeft = (fabricCanvas.width - img.getScaledWidth()) / 2;
+      const centerTop = (fabricCanvas.height - img.getScaledHeight()) / 2;
+
       img.set({
-        left: targetZone.left + (targetZone.width - img.getScaledWidth()) / 2,
-        top: targetZone.top + (targetZone.height - img.getScaledHeight()) / 2,
+        left: centerLeft,
+        top: centerTop,
         cornerColor: "#008060",
         cornerStyle: "circle",
         transparentCorners: false,
@@ -261,36 +623,20 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
     <div className="pdp-wrap">
       {/* NAV */}
       <nav className="pdp-nav">
-        <div className="pdp-nav-logo" onClick={onBack}>Hari Om Print House</div>
-        <ul style={{ display: "flex", gap: 0, listStyle: "none", alignItems: 'center' }}>
-          <li style={{ position: 'relative' }}>
-            <a
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              style={{ display: 'block', padding: '8px 18px', fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px", opacity: 0.8 }}
-            >
-              Products ▾
-            </a>
-            <div className="moo-mega" style={{ position: 'absolute', top: 'calc(100% + 12px)', left: '50%', transform: 'translateX(-50%)', background: 'var(--bg-white)', border: '1px solid var(--border-color)', borderRadius: 8, boxShadow: '0 20px 60px rgba(0,0,0,0.12)', padding: '28px 32px', minWidth: 680, zIndex: 200, display: 'none' }}
-              onMouseEnter={e => e.currentTarget.style.display = 'grid'}
-            >
-              <style>{`.pdp-nav li:hover .moo-mega { display: grid !important; grid-template-columns: repeat(4,1fr); gap: 32px; }`}</style>
-              {PRODUCT_GROUPS.map(g => (
-                <div key={g.group}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border-color)' }}>{g.group}</div>
-                  {g.items.map(item => (
-                    <span
-                      key={item.id}
-                      onClick={() => onNavigate && onNavigate(item.id)}
-                      style={{ display: 'block', fontSize: 13, color: 'var(--text-light)', padding: '6px 0', cursor: 'pointer', transition: 'color 0.2s' }}
-                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-dark)'; e.currentTarget.style.paddingLeft = '6px'; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.paddingLeft = '0'; }}
-                    >{item.label}</span>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </li>
+        <div className="pdp-nav-logo" onClick={handleBackSafe}>Hari Om Print House</div>
+        <ul style={{ display: "flex", gap: 32, listStyle: "none" }}>
+          {["Bottles", "Mugs", "Diaries", "Pens"].map(l => (
+            <li key={l}>
+              <a 
+                href="#" 
+                className="pdp-nav-link"
+                onClick={(e) => { e.preventDefault(); handleNavigateSafe(l.toLowerCase()); }} 
+                style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}
+              >
+                {l}
+              </a>
+            </li>
+          ))}
           <li>
             <a href="#" className="pdp-nav-link" onClick={(e) => { e.preventDefault(); toggleTheme && toggleTheme(); }} style={{ display: 'block', padding: '8px 18px', fontSize: 13, fontWeight: 500, color: 'var(--text-dark)', textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}>
               {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
@@ -300,7 +646,8 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {user ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: 'var(--text-light)', fontWeight: 500 }}>Hi, {user.name.split(' ')[0]}</span>
+              <span style={{ fontSize: 13, color: 'var(--text-light)', fontWeight: 500, cursor: 'pointer' }} onClick={onGoToDashboard}>Hi, {user.name.split(' ')[0]}</span>
+              <button onClick={onGoToDashboard} style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-dark)', padding: '8px 16px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Outfit', sans-serif" }}>My Orders</button>
               <button onClick={onLogout} style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-dark)', padding: '8px 16px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Outfit', sans-serif" }}>Sign Out</button>
             </div>
           ) : (
@@ -328,7 +675,7 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
 
       {/* BREADCRUMB */}
       <div className="pdp-breadcrumb">
-        <a onClick={onBack}>Home</a>
+        <a onClick={handleBackSafe}>Home</a>
         <span>/</span>
         <a href="#" style={{textTransform: 'capitalize'}}>{activeProductId}</a>
         <span>/</span>
@@ -465,29 +812,38 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
 
           {/* ─── EMBEDDED CUSTOMIZER SECTION ─── */}
           <div className="pdp-customizer-section">
-            <h3>Logo & Text Placement</h3>
-            <p>Upload your logo and position it within the print zone. Drag, scale, and rotate to perfection.</p>
+            <h3>Logo & Text Customization</h3>
+            <p>Upload your logo or type custom text. Click, drag, scale, and rotate objects directly on the product.</p>
 
-            {/* Print Zone coordinates from customization.json */}
-            <div className="pdp-zone-info">
-              <h4>📐 Print Zone Config</h4>
-              {PRINT_ZONES.map((z) => (
-                <div key={z.id} style={{marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #e5e5e5'}}>
-                  <div style={{fontWeight: 600, color: '#333', fontSize: 12}}>{z.title}</div>
-                  <div style={{fontSize: 11, color: '#666'}}>Shape: {z.shape} | X: {z.px*100}% | Y: {z.py*100}% | W: {z.pWidth*100}% | H: {z.pHeight*100}% | Angle: {z.angle}°</div>
-                </div>
-              ))}
+            {/* Undo / Redo Control Bar */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button 
+                className="pdp-ctrl-btn" 
+                onClick={undo} 
+                disabled={historyIdx <= 0}
+                style={{ opacity: historyIdx <= 0 ? 0.5 : 1, cursor: historyIdx <= 0 ? 'not-allowed' : 'pointer' }}
+              >
+                ↩ Undo
+              </button>
+              <button 
+                className="pdp-ctrl-btn" 
+                onClick={redo} 
+                disabled={historyIdx >= history.length - 1}
+                style={{ opacity: historyIdx >= history.length - 1 ? 0.5 : 1, cursor: historyIdx >= history.length - 1 ? 'not-allowed' : 'pointer' }}
+              >
+                ↪ Redo
+              </button>
             </div>
 
-            {selCustom.includes("Image") && (
-              <label className="pdp-upload-label">
-                ↑ Upload Your Logo
+            {selCustom.includes("Image") && PRODUCT.logoCustomizationEnabled !== false && (
+              <label className="pdp-upload-label" style={{ display: 'block', marginBottom: '16px', textAlign: 'center', background: '#008060', color: '#fff', padding: '12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>
+                ↑ Upload Your Logo (Max: {PRODUCT.maxLogoSize || 150}px)
                 <input type="file" accept="image/*" onChange={handleUpload} style={{ display: "none" }} />
               </label>
             )}
 
-            {selCustom.includes("Text") && (
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {selCustom.includes("Text") && PRODUCT.textCustomizationEnabled !== false && (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <select 
                   value={fontFamily}
                   onChange={(e) => {
@@ -497,10 +853,11 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
                       if (activeObj && activeObj.type === 'i-text') {
                         activeObj.set('fontFamily', e.target.value);
                         fabricCanvas.renderAll();
+                        saveState();
                       }
                     }
                   }}
-                  style={{ padding: '10px', borderRadius: '6px', border: '1.5px solid #ddd', fontFamily: "'Inter', sans-serif", fontSize: '13px', background: '#fff', cursor: 'pointer' }}
+                  style={{ padding: '10px', borderRadius: '6px', border: '1.5px solid var(--border-color)', fontFamily: "'Inter', sans-serif", fontSize: '13px', background: '#fff', color: '#111', cursor: 'pointer' }}
                 >
                   <option value="Inter">Inter (Sans)</option>
                   <option value="Montserrat">Montserrat (Wide)</option>
@@ -518,16 +875,17 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
                       if (activeObj && activeObj.type === 'i-text') {
                         activeObj.set('fill', e.target.value);
                         fabricCanvas.renderAll();
+                        saveState();
                       }
                     }
                   }}
-                  style={{ width: '40px', height: '40px', padding: '2px', cursor: 'pointer', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', flexShrink: 0 }}
+                  style={{ width: '40px', height: '40px', padding: '2px', cursor: 'pointer', border: '1px solid var(--border-color)', borderRadius: '6px', background: '#fff', flexShrink: 0 }}
                   title="Choose text color"
                 />
                 <input 
                   type="text" 
-                  placeholder="Enter custom text..." 
-                  style={{ flex: 1, minWidth: '150px', padding: '10px', borderRadius: '6px', border: '1.5px solid #ddd', fontFamily: "'Inter', sans-serif", fontSize: '13px' }}
+                  placeholder={`Enter text (Max ${PRODUCT.maxTextLength || 50} chars)...`}
+                  style={{ flex: 1, minWidth: '150px', padding: '10px', borderRadius: '6px', border: '1.5px solid var(--border-color)', fontFamily: "'Inter', sans-serif", fontSize: '13px', background: '#fff', color: '#111' }}
                   id="customTextEntry"
                   onKeyDown={(e) => {
                     if(e.key === 'Enter') document.getElementById('addTextBtn').click();
@@ -538,20 +896,33 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
                   className="pdp-ctrl-btn" 
                   style={{ flex: 'none', background: '#111', color: '#fff', borderColor: '#111', padding: '0 20px' }}
                   onClick={() => {
-                    const text = document.getElementById("customTextEntry").value;
-                    if (text && fabricCanvas && printZoneObjs.length > 0) {
-                      const targetZone = printZoneObjs[0];
+                    let text = document.getElementById("customTextEntry").value;
+                    if (text && fabricCanvas) {
+                      // Truncate to validation character limit
+                      const maxChar = PRODUCT.maxTextLength || 50;
+                      if (text.length > maxChar) {
+                        text = text.substring(0, maxChar);
+                      }
+                      
                       const textObj = new fabric.IText(text, {
-                        left: targetZone.left + 10,
-                        top: targetZone.top + 10,
                         fontFamily: fontFamily,
                         fill: textColor,
-                        fontSize: 24,
+                        fontSize: PRODUCT.defaultTextSize || 24,
                         cornerColor: "#008060",
                         cornerStyle: "circle",
                         transparentCorners: false,
                         borderColor: "#008060",
                       });
+                      
+                      // Auto centering on entire canvas area
+                      const centerLeft = (fabricCanvas.width - textObj.getScaledWidth()) / 2;
+                      const centerTop = (fabricCanvas.height - textObj.getScaledHeight()) / 2;
+                      
+                      textObj.set({
+                        left: centerLeft,
+                        top: centerTop
+                      });
+                      
                       fabricCanvas.add(textObj);
                       fabricCanvas.setActiveObject(textObj);
                       fabricCanvas.renderAll();
@@ -564,7 +935,26 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
               </div>
             )}
 
-            <div className="pdp-canvas-wrap" id="pdp-canvas-wrap-id" style={{ background: '#f9f9f9', position: 'relative' }}>
+            {/* Simple Locking options for canvas-style manipulation */}
+            {fabricCanvas && fabricCanvas.getActiveObject() && (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                <button 
+                  className="pdp-ctrl-btn" 
+                  style={{ 
+                    flex: 1,
+                    background: isLocked ? '#111' : 'transparent', 
+                    color: isLocked ? '#fff' : 'var(--text-dark)',
+                    borderColor: isLocked ? '#111' : 'var(--border-color)',
+                    padding: '10px'
+                  }} 
+                  onClick={toggleLock}
+                >
+                  {isLocked ? '🔓 Unlock Object' : '🔒 Lock Position'}
+                </button>
+              </div>
+            )}
+
+            <div className="pdp-canvas-wrap" id="pdp-canvas-wrap-id" style={{ background: '#f9f9f9', position: 'relative', overflow: 'hidden', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
               <div 
                 id="pdp-canvas-tint-overlay" 
                 style={{
@@ -580,9 +970,8 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
               </div>
             </div>
 
-            <div className="pdp-canvas-controls">
-              <button className="pdp-ctrl-btn" onClick={() => { if (fabricCanvas) fabricCanvas.getActiveObjects().forEach(o => o.rotate((o.angle || 0) + 15)) && fabricCanvas.renderAll(); }}>↺ Rotate</button>
-              <button className="pdp-ctrl-btn danger" onClick={handleDelete}>🗑 Delete</button>
+            <div className="pdp-canvas-controls" style={{ marginTop: '16px', marginBottom: '16px' }}>
+              <button className="pdp-ctrl-btn danger" style={{ flex: 'none', width: '100%' }} onClick={handleDelete}>🗑 Delete Selected</button>
             </div>
           </div>
 

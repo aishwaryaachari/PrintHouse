@@ -3,6 +3,9 @@ import { PRODUCT_GROUPS } from "./data";
 import ProductDetail from "./ProductDetail";
 import Cart from "./Cart";
 import AuthModal from "./AuthModal";
+import CheckoutModal from "./CheckoutModal";
+import PaymentModal from "./PaymentModal";
+import Dashboard from "./Dashboard";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Outfit:wght@300;400;500;600&display=swap');
@@ -115,13 +118,36 @@ const styles = `
 `;
 
 export default function App() {
-  const [view, setView] = useState('home');
-  const [theme, setTheme] = useState('light');
-  const [cartItems, setCartItems] = useState([]);
+  const [view, setView] = useState(() => {
+    return localStorage.getItem("hoph_view") || 'home';
+  });
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("hoph_theme") || 'light';
+  });
+  const [cartItems, setCartItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem("hoph_cart");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [appliedCoupon, setAppliedCoupon] = useState(() => {
+    try {
+      const saved = localStorage.getItem("hoph_applied_coupon");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [cartOpen, setCartOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '' });
   const [authOpen, setAuthOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [activeInquiryId, setActiveInquiryId] = useState(null);
+  const [activeInquiryPrice, setActiveInquiryPrice] = useState(0);
   const toastTimer = useRef(null);
 
   const showToast = (msg) => {
@@ -166,46 +192,70 @@ export default function App() {
     showToast('Signed out successfully');
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (!user) {
       setAuthOpen(true);
       return;
     }
-    const totalPrice = cartItems.reduce((sum, i) => sum + i.pricePerItem * i.qty, 0);
-    const totalItems = cartItems.reduce((sum, i) => sum + i.qty, 0);
-    
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/auth/inquiry/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          items: cartItems,
-          totalPrice,
-          totalItems,
-          email: user.email,
-        }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setCartItems([]);
-        setCartOpen(false);
-        alert(`Bulk inquiry #${data.inquiry_id} submitted successfully! Our team will contact you shortly.`);
-      } else {
-        alert(data.error || 'Failed to submit inquiry.');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Error connecting to backend database.');
-    }
+    setCartOpen(false);
+    setCheckoutOpen(true);
+  };
+
+  const handleCheckoutSuccess = (inquiryId, totalPrice) => {
+    setCheckoutOpen(false);
+    setCartItems([]);
+    setAppliedCoupon(null);
+    setActiveInquiryId(inquiryId);
+    setActiveInquiryPrice(totalPrice);
+    setPaymentOpen(true);
+  };
+
+  const handlePaymentSuccess = () => {
+    setPaymentOpen(false);
+    setView('dashboard');
   };
 
   const cartCount = cartItems.reduce((sum, i) => sum + i.qty, 0);
 
   useEffect(() => {
+    localStorage.setItem("hoph_theme", theme);
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("hoph_view", view);
+  }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem("hoph_cart", JSON.stringify(cartItems));
+  }, [cartItems]);
+
+  useEffect(() => {
+    if (appliedCoupon) {
+      localStorage.setItem("hoph_applied_coupon", JSON.stringify(appliedCoupon));
+    } else {
+      localStorage.removeItem("hoph_applied_coupon");
+    }
+  }, [appliedCoupon]);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/auth/me/', {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.authenticated && data.user) {
+            setUser(data.user);
+          }
+        }
+      } catch (err) {
+        console.error("Session check failed:", err);
+      }
+    };
+    checkSession();
+  }, []);
 
   const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
 
@@ -224,6 +274,11 @@ export default function App() {
 
   if (view.startsWith('pdp')) {
     const activeProductId = view.split('-')[1] || 'bottles';
+    const basePrice = cartItems.reduce((sum, i) => sum + i.pricePerItem * i.qty, 0);
+    const discountAmount = appliedCoupon ? (basePrice * appliedCoupon.discount_percentage / 100) : 0;
+    const finalPrice = basePrice - discountAmount;
+    const totalItems = cartItems.reduce((sum, i) => sum + i.qty, 0);
+
     return (
       <>
         <ProductDetail
@@ -239,6 +294,7 @@ export default function App() {
           user={user}
           onOpenAuth={() => setAuthOpen(true)}
           onLogout={handleLogout}
+          onGoToDashboard={() => setView('dashboard')}
         />
         <Cart
           isOpen={cartOpen}
@@ -247,6 +303,25 @@ export default function App() {
           onUpdateQty={handleUpdateQty}
           onRemove={handleRemove}
           onCheckout={handleCheckout}
+          appliedCoupon={appliedCoupon}
+          onApplyCoupon={setAppliedCoupon}
+          onClearCoupon={() => setAppliedCoupon(null)}
+        />
+        <CheckoutModal
+          isOpen={checkoutOpen}
+          onClose={() => setCheckoutOpen(false)}
+          items={cartItems}
+          totalPrice={finalPrice}
+          totalItems={totalItems}
+          email={user?.email || ""}
+          onSubmitSuccess={handleCheckoutSuccess}
+        />
+        <PaymentModal
+          isOpen={paymentOpen}
+          onClose={() => setPaymentOpen(false)}
+          inquiryId={activeInquiryId}
+          totalPrice={activeInquiryPrice}
+          onPaymentSuccess={handlePaymentSuccess}
         />
         <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthSuccess={(u) => { setUser(u); showToast(`Welcome, ${u.name}!`); }} />
         <div className={`cart-toast${toast.show ? ' show' : ''}`}>{toast.msg}</div>
@@ -254,11 +329,85 @@ export default function App() {
     );
   }
 
+  if (view === 'dashboard') {
+    const basePrice = cartItems.reduce((sum, i) => sum + i.pricePerItem * i.qty, 0);
+    const discountAmount = appliedCoupon ? (basePrice * appliedCoupon.discount_percentage / 100) : 0;
+    const finalPrice = basePrice - discountAmount;
+    const totalItems = cartItems.reduce((sum, i) => sum + i.qty, 0);
+
+    return (
+      <div>
+        {/* NAV */}
+        <nav className="moo-nav">
+          <div className="moo-nav-logo" style={{cursor: 'pointer'}} onClick={() => setView('home')}>Hari Om Print House</div>
+          <ul className="moo-nav-links">
+            <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-bottles'); }}>Bottles</a></li>
+            <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-mugs'); }}>Mugs</a></li>
+            <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-diaries'); }}>Diaries</a></li>
+            <li><a href="#" onClick={(e) => { e.preventDefault(); setView('pdp-pens'); }}>Pens</a></li>
+            <li><a href="#" onClick={(e) => { e.preventDefault(); toggleTheme(); }}>{theme === 'dark' ? '☀️ Light' : '🌙 Dark'}</a></li>
+          </ul>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            {user ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-light)', fontWeight: 500, cursor: 'pointer' }} onClick={() => setView('dashboard')}>Hi, {user.name.split(' ')[0]}</span>
+                <button onClick={() => setView('dashboard')} style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-dark)', padding: '10px 18px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Outfit', sans-serif" }}>My Orders</button>
+                <button onClick={handleLogout} style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-dark)', padding: '10px 18px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Outfit', sans-serif", transition: 'all 0.2s' }}>Sign Out</button>
+              </div>
+            ) : (
+              <button onClick={() => setAuthOpen(true)} style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-dark)', padding: '12px 24px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1.5px', fontFamily: "'Outfit', sans-serif", transition: 'all 0.3s ease' }}>Sign In</button>
+            )}
+            <button className="moo-nav-cart" onClick={() => setCartOpen(true)} title="View cart">
+              <svg viewBox="0 0 24 24" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              {cartCount > 0 && <span className="moo-cart-badge">{cartCount}</span>}
+            </button>
+            <button className="moo-nav-btn" onClick={() => setView('pdp-bottles')}>Shop Now</button>
+          </div>
+        </nav>
+        <Dashboard onBack={() => setView('home')} />
+        <Cart
+          isOpen={cartOpen}
+          onClose={() => setCartOpen(false)}
+          items={cartItems}
+          onUpdateQty={handleUpdateQty}
+          onRemove={handleRemove}
+          onCheckout={handleCheckout}
+          appliedCoupon={appliedCoupon}
+          onApplyCoupon={setAppliedCoupon}
+          onClearCoupon={() => setAppliedCoupon(null)}
+        />
+        <CheckoutModal
+          isOpen={checkoutOpen}
+          onClose={() => setCheckoutOpen(false)}
+          items={cartItems}
+          totalPrice={finalPrice}
+          totalItems={totalItems}
+          email={user?.email || ""}
+          onSubmitSuccess={handleCheckoutSuccess}
+        />
+        <PaymentModal
+          isOpen={paymentOpen}
+          onClose={() => setPaymentOpen(false)}
+          inquiryId={activeInquiryId}
+          totalPrice={activeInquiryPrice}
+          onPaymentSuccess={handlePaymentSuccess}
+        />
+        <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthSuccess={(u) => { setUser(u); showToast(`Welcome, ${u.name}!`); }} />
+        <div className={`cart-toast${toast.show ? ' show' : ''}`}>{toast.msg}</div>
+      </div>
+    );
+  }
+
+  const basePrice = cartItems.reduce((sum, i) => sum + i.pricePerItem * i.qty, 0);
+  const discountAmount = appliedCoupon ? (basePrice * appliedCoupon.discount_percentage / 100) : 0;
+  const finalPrice = basePrice - discountAmount;
+  const totalItems = cartItems.reduce((sum, i) => sum + i.qty, 0);
+
   return (
     <div>
       {/* NAV */}
       <nav className="moo-nav">
-        <div className="moo-nav-logo">Hari Om Print House</div>
+        <div className="moo-nav-logo" style={{cursor: 'pointer'}} onClick={() => setView('home')}>Hari Om Print House</div>
         <ul className="moo-nav-links">
           <li>
             <a href="#" onClick={e => e.preventDefault()}>Products ▾</a>
@@ -278,7 +427,8 @@ export default function App() {
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           {user ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: 'var(--text-light)', fontWeight: 500 }}>Hi, {user.name.split(' ')[0]}</span>
+              <span style={{ fontSize: 13, color: 'var(--text-light)', fontWeight: 500, cursor: 'pointer' }} onClick={() => setView('dashboard')}>Hi, {user.name.split(' ')[0]}</span>
+              <button onClick={() => setView('dashboard')} style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-dark)', padding: '10px 18px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Outfit', sans-serif" }}>My Orders</button>
               <button onClick={handleLogout} style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-dark)', padding: '10px 18px', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Outfit', sans-serif", transition: 'all 0.2s' }}>Sign Out</button>
             </div>
           ) : (
@@ -291,7 +441,23 @@ export default function App() {
           <button className="moo-nav-btn" onClick={() => setView('pdp-bottles')}>Shop Now</button>
         </div>
       </nav>
-      <Cart isOpen={cartOpen} onClose={() => setCartOpen(false)} items={cartItems} onUpdateQty={handleUpdateQty} onRemove={handleRemove} onCheckout={handleCheckout} />
+      <Cart isOpen={cartOpen} onClose={() => setCartOpen(false)} items={cartItems} onUpdateQty={handleUpdateQty} onRemove={handleRemove} onCheckout={handleCheckout} appliedCoupon={appliedCoupon} onApplyCoupon={setAppliedCoupon} onClearCoupon={() => setAppliedCoupon(null)} />
+      <CheckoutModal
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        items={cartItems}
+        totalPrice={finalPrice}
+        totalItems={totalItems}
+        email={user?.email || ""}
+        onSubmitSuccess={handleCheckoutSuccess}
+      />
+      <PaymentModal
+        isOpen={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        inquiryId={activeInquiryId}
+        totalPrice={activeInquiryPrice}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
       <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthSuccess={(u) => { setUser(u); showToast(`Welcome, ${u.name}!`); }} />
       <div className={`cart-toast${toast.show ? ' show' : ''}`}>{toast.msg}</div>
 

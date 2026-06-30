@@ -1,181 +1,176 @@
 from django.contrib import admin
-from .models import (
-    User, LoginHistory, Address,
-    Category, Subcategory, PrintingMethod,
-    Product, ProductImage, ProductVariant, QuantityPriceTier, PrintZone,
-    Artwork, Design, DesignObject,
-    BulkInquiry, InquiryItem, Quote, Order, AuditLog
-)
+from django.contrib.auth.models import User, Group
+from django.contrib.auth.admin import UserAdmin, GroupAdmin
+from django.db.models import Sum
+from .models import Product, PrintZone, BulkInquiry, ContactMessage, CouponCode, ProductReview, PaymentSetting, Payment, CustomerNotification
 
+class MyAdminSite(admin.AdminSite):
+    site_header = "Hari Om Print House Admin"
+    site_title = "Hari Om Admin Portal"
+    index_title = "Welcome to Hari Om Admin Panel"
 
-# ─── INLINES ──────────────────────────────────────────────────────────────────
+    def index(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['total_users'] = User.objects.count()
+        
+        # Calculate stats
+        extra_context['total_products'] = Product.objects.count()
+        extra_context['total_inquiries'] = BulkInquiry.objects.count()
+        
+        extra_context['pending_inquiries'] = BulkInquiry.objects.filter(status='PENDING').count()
+        extra_context['approved_inquiries'] = BulkInquiry.objects.filter(status='APPROVED').count()
+        extra_context['rejected_inquiries'] = BulkInquiry.objects.filter(status='REJECTED').count()
+        
+        extra_context['total_orders'] = BulkInquiry.objects.filter(
+            status__in=['APPROVED', 'PROCESSING', 'SHIPPED', 'COMPLETED']
+        ).count()
+        
+        extra_context['revenue_summary'] = Payment.objects.filter(status='VERIFIED').aggregate(total=Sum('amount'))['total'] or 0
+        
+        return super().index(request, extra_context)
 
-class ProductImageInline(admin.TabularInline):
-    model = ProductImage
-    extra = 1
-    fields = ('image_url', 'alt_text', 'is_primary', 'sort_order')
+my_admin_site = MyAdminSite(name='my_admin')
 
-
-class ProductVariantInline(admin.TabularInline):
-    model = ProductVariant
-    extra = 1
-    fields = ('sku', 'size', 'color_name', 'color_hex', 'base_price', 'stock_quantity', 'is_active')
-
-
-class QuantityPriceTierInline(admin.TabularInline):
-    model = QuantityPriceTier
-    extra = 3
-    fields = ('minimum_quantity', 'price_per_unit')
+# Register default Django models
+my_admin_site.register(User, UserAdmin)
+my_admin_site.register(Group, GroupAdmin)
 
 
 class PrintZoneInline(admin.TabularInline):
     model = PrintZone
     extra = 1
-    fields = ('title', 'zone_type', 'px', 'py', 'p_width', 'p_height', 'max_width_mm', 'max_height_mm')
 
-
-class InquiryItemInline(admin.TabularInline):
-    model = InquiryItem
-    extra = 0
-    readonly_fields = ('line_total',)
-    fields = ('variant', 'design', 'quantity', 'calculated_unit_price', 'line_total', 'customer_notes')
-
-
-class SubcategoryInline(admin.TabularInline):
-    model = Subcategory
-    extra = 1
-    fields = ('name', 'slug', 'sort_order', 'is_active')
-
-
-# ─── CATEGORIES ───────────────────────────────────────────────────────────────
-
-@admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug', 'sort_order', 'is_active')
-    list_editable = ('sort_order', 'is_active')
-    search_fields = ('name',)
-    prepopulated_fields = {'slug': ('name',)}
-    inlines = [SubcategoryInline]
-
-
-@admin.register(Subcategory)
-class SubcategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'slug', 'sort_order', 'is_active')
-    list_filter = ('category',)
-    search_fields = ('name', 'category__name')
-    prepopulated_fields = {'slug': ('name',)}
-
-
-# ─── PRINTING METHODS ─────────────────────────────────────────────────────────
-
-@admin.register(PrintingMethod)
-class PrintingMethodAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug', 'suitable_for')
-    search_fields = ('name',)
-    prepopulated_fields = {'slug': ('name',)}
-
-
-# ─── PRODUCTS ─────────────────────────────────────────────────────────────────
-
-@admin.register(Product)
+@admin.register(Product, site=my_admin_site)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'subcategory', 'badge', 'minimum_order_quantity', 'is_active', 'is_featured')
-    list_filter = ('category', 'subcategory', 'is_active', 'is_featured', 'printing_methods')
-    search_fields = ('name', 'sku_prefix', 'description')
-    list_editable = ('is_active', 'is_featured')
-    prepopulated_fields = {'slug': ('name',)}
-    filter_horizontal = ('printing_methods',)
-    inlines = [ProductImageInline, ProductVariantInline, QuantityPriceTierInline, PrintZoneInline]
-    fieldsets = (
-        ('Core Info', {
-            'fields': ('category', 'subcategory', 'name', 'slug', 'sku_prefix', 'badge', 'short_description', 'description')
-        }),
-        ('Material & Specs', {
-            'fields': ('material', 'thumbnail', 'minimum_order_quantity')
-        }),
-        ('Printing', {
-            'fields': ('printing_methods',)
-        }),
-        ('Visibility', {
-            'fields': ('is_active', 'is_featured')
-        }),
-    )
+    list_display = ('name', 'category', 'badge')
+    search_fields = ('name', 'category')
+    list_filter = ('category',)
+    inlines = [PrintZoneInline]
 
-
-@admin.register(ProductVariant)
-class ProductVariantAdmin(admin.ModelAdmin):
-    list_display = ('sku', 'product', 'size', 'color_name', 'base_price', 'stock_quantity', 'is_active')
-    list_filter = ('product__category', 'is_active')
-    search_fields = ('sku', 'product__name', 'color_name')
-    list_editable = ('base_price', 'stock_quantity', 'is_active')
-
-
-@admin.register(PrintZone)
+@admin.register(PrintZone, site=my_admin_site)
 class PrintZoneAdmin(admin.ModelAdmin):
-    list_display = ('product', 'title', 'zone_type', 'max_width_mm', 'max_height_mm')
-    list_filter = ('zone_type', 'product__category')
-    search_fields = ('product__name', 'title')
-    filter_horizontal = ('supported_printing_methods',)
+    list_display = ('product', 'title', 'zone_id', 'zone_type', 'px', 'py', 'pWidth', 'pHeight')
+    list_filter = ('product', 'zone_type')
+    search_fields = ('title', 'zone_id')
 
-
-# ─── USER ─────────────────────────────────────────────────────────────────────
-
-@admin.register(User)
-class UserAdmin(admin.ModelAdmin):
-    list_display = ('email', 'first_name', 'last_name', 'phone', 'account_status', 'email_verified', 'is_staff', 'date_joined')
-    list_filter = ('account_status', 'email_verified', 'is_staff')
-    search_fields = ('email', 'first_name', 'last_name', 'phone')
-    readonly_fields = ('date_joined', 'last_login')
-
-
-# ─── INQUIRIES ────────────────────────────────────────────────────────────────
-
-@admin.register(BulkInquiry)
+@admin.register(BulkInquiry, site=my_admin_site)
 class BulkInquiryAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company_name', 'contact_email', 'contact_phone', 'total_estimated_price', 'status', 'created_at')
-    list_filter = ('status', 'created_at')
-    search_fields = ('contact_email', 'company_name')
+    list_display = ('id', 'contact_email', 'company_name', 'total_price', 'status', 'created_date', 'created_time', 'last_updated')
+    list_filter = ('status', 'payment_method', 'created_at')
+    search_fields = ('contact_email', 'company_name', 'id')
     list_editable = ('status',)
-    readonly_fields = ('id', 'created_at', 'updated_at')
-    inlines = [InquiryItemInline]
+    readonly_fields = ('created_date', 'created_time', 'last_updated', 'approved_at')
+    
+    actions = ['approve_inquiries', 'reject_inquiries']
+
+    def approve_inquiries(self, request, queryset):
+        for obj in queryset:
+            obj.status = 'APPROVED'
+            obj.save()
+        self.message_user(request, f"Selected inquiries approved successfully.")
+    approve_inquiries.short_description = "Approve selected inquiries"
+
+    def reject_inquiries(self, request, queryset):
+        for obj in queryset:
+            obj.status = 'REJECTED'
+            obj.save()
+        self.message_user(request, f"Selected inquiries rejected successfully.")
+    reject_inquiries.short_description = "Reject selected inquiries"
+
+    # Time Display Methods
+    def created_date(self, obj):
+        from django.utils.timezone import localtime
+        return localtime(obj.created_at).strftime('%Y-%m-%d')
+    created_date.short_description = 'Created Date'
+
+    def created_time(self, obj):
+        from django.utils.timezone import localtime
+        return localtime(obj.created_at).strftime('%H:%M:%S')
+    created_time.short_description = 'Created Time'
+
+    def last_updated(self, obj):
+        from django.utils.timezone import localtime
+        return localtime(obj.updated_at).strftime('%Y-%m-%d %H:%M:%S')
+    last_updated.short_description = 'Last Updated'
 
 
-@admin.register(Quote)
-class QuoteAdmin(admin.ModelAdmin):
-    list_display = ('inquiry', 'final_price', 'status', 'valid_until')
-    list_filter = ('status',)
+@admin.register(PaymentSetting, site=my_admin_site)
+class PaymentSettingAdmin(admin.ModelAdmin):
+    list_display = ('upi_id', 'bank_name', 'account_name', 'account_number', 'ifsc_code')
 
 
-@admin.register(Order)
-class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'status', 'tracking_number', 'estimated_delivery')
-    list_filter = ('status',)
-    search_fields = ('user__email', 'tracking_number')
+@admin.register(Payment, site=my_admin_site)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'inquiry', 'amount', 'payment_method', 'status', 'submitted_at', 'verified_at')
+    list_filter = ('status', 'payment_method', 'created_at')
+    search_fields = ('inquiry__id', 'inquiry__contact_email', 'id')
+    readonly_fields = ('submitted_at', 'verified_at', 'created_at', 'updated_at')
+    actions = ['verify_payments', 'reject_payments', 'mark_as_received']
+
+    def verify_payments(self, request, queryset):
+        from django.utils import timezone
+        for payment in queryset:
+            payment.status = 'VERIFIED'
+            payment.verified_at = timezone.now()
+            payment.save()
+            
+            # Update inquiry status to PROCESSING
+            inquiry = payment.inquiry
+            inquiry.status = 'PROCESSING'
+            inquiry.save()
+        self.message_user(request, "Selected payments verified and order status updated to Processing.")
+    verify_payments.short_description = "Verify selected payments"
+
+    def reject_payments(self, request, queryset):
+        for payment in queryset:
+            payment.status = 'FAILED'
+            payment.save()
+            
+            # Revert inquiry status back to APPROVED so customer can re-submit
+            inquiry = payment.inquiry
+            inquiry.status = 'APPROVED'
+            inquiry.save()
+            
+            # Create a notification for the rejection
+            CustomerNotification.objects.create(
+                user=inquiry.user,
+                inquiry=inquiry,
+                message=f"Your payment proof for order #HOPH-{inquiry.id} was rejected. Please re-submit payment proof."
+            )
+        self.message_user(request, "Selected payments marked as Failed and customer notified.")
+    reject_payments.short_description = "Reject selected payments"
+
+    def mark_as_received(self, request, queryset):
+        self.verify_payments(request, queryset)
+    mark_as_received.short_description = "Mark payment as received"
 
 
-# ─── DESIGN ENGINE ────────────────────────────────────────────────────────────
-
-@admin.register(Artwork)
-class ArtworkAdmin(admin.ModelAdmin):
-    list_display = ('original_filename', 'user', 'file_type', 'file_size_bytes', 'created_at')
-    list_filter = ('file_type',)
-    search_fields = ('original_filename', 'user__email')
+@admin.register(CustomerNotification, site=my_admin_site)
+class CustomerNotificationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'inquiry', 'message', 'is_read', 'created_at')
+    list_filter = ('is_read', 'created_at')
+    search_fields = ('user__username', 'message')
 
 
-@admin.register(Design)
-class DesignAdmin(admin.ModelAdmin):
-    list_display = ('title', 'user', 'print_zone', 'created_at')
-    search_fields = ('title', 'user__email')
+@admin.register(ContactMessage, site=my_admin_site)
+class ContactMessageAdmin(admin.ModelAdmin):
+    list_display = ('name', 'email', 'phone', 'is_resolved', 'created_at')
+    list_filter = ('is_resolved', 'created_at')
+    search_fields = ('name', 'email', 'message')
+    list_editable = ('is_resolved',)
+
+@admin.register(CouponCode, site=my_admin_site)
+class CouponCodeAdmin(admin.ModelAdmin):
+    list_display = ('code', 'discount_percentage', 'valid_from', 'valid_to', 'is_active')
+    list_filter = ('is_active', 'valid_from', 'valid_to')
+    search_fields = ('code',)
+    list_editable = ('is_active',)
+
+@admin.register(ProductReview, site=my_admin_site)
+class ProductReviewAdmin(admin.ModelAdmin):
+    list_display = ('user', 'product_category', 'rating', 'is_approved', 'created_at')
+    list_filter = ('rating', 'is_approved', 'created_at', 'product_category')
+    search_fields = ('user__username', 'comment')
+    list_editable = ('is_approved',)
 
 
-# ─── MISC ─────────────────────────────────────────────────────────────────────
-
-admin.site.register(LoginHistory)
-admin.site.register(Address)
-admin.site.register(DesignObject)
-admin.site.register(InquiryItem)
-admin.site.register(AuditLog)
-
-admin.site.site_header = "Hari Om Print House — Admin"
-admin.site.site_title = "Print House Admin"
-admin.site.index_title = "Welcome to Print House Management"
