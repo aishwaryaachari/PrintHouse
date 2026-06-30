@@ -1,6 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
-import uuid
+from django.contrib.auth.models import User
 
 class Product(models.Model):
     category = models.CharField(max_length=50, unique=True, help_text="e.g. bottles, mugs, diaries, pens")
@@ -56,19 +55,14 @@ class BulkInquiry(models.Model):
         ('COMPLETED', 'Completed'),
     ]
 
-class Subcategory(BaseModel):
-    """Sub-level category: Stainless Steel Bottles, Ceramic Mugs, etc."""
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='subcategories')
-    name = models.CharField(max_length=100)
-    slug = models.SlugField(max_length=120)
-    description = models.TextField(blank=True)
-    sort_order = models.IntegerField(default=0)
-    is_active = models.BooleanField(default=True, db_index=True)
-
-    class Meta:
-        verbose_name_plural = 'Subcategories'
-        ordering = ['sort_order', 'name']
-        unique_together = [('category', 'slug')]
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    contact_email = models.EmailField()
+    items = models.JSONField(default=list, help_text="List of items in the cart with their custom logo, color, size, etc.")
+    total_price = models.DecimalField(max_digits=12, decimal_places=2)
+    total_items = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     # B2B Checkout Fields
     company_name = models.CharField(max_length=255, blank=True, null=True)

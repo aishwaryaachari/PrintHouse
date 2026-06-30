@@ -19,11 +19,6 @@ from django.conf import settings
 from django.conf.urls.static import static
 from accounts.admin import my_admin_site
 
-from django.http import JsonResponse
-
-def api_root(request):
-    return JsonResponse({"message": "Welcome to the Print House API Backend! The frontend is running at http://localhost:5173"})
-
 urlpatterns = [
     path('admin/', my_admin_site.urls),
     path('api/auth/', include('accounts.urls')),
