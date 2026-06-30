@@ -111,7 +111,8 @@ export default function ProductDetail({ onBack, onNavigate, onCustomize, activeP
       .catch(err => console.error("Error loading products from SQLite DB:", err));
   }, []);
 
-  const activeCatalog = dbProducts || PRODUCTS;
+  // Always use the local data.js catalog to preserve the user's added products and correct images
+  const activeCatalog = PRODUCTS;
   const PRODUCT = activeCatalog[activeProductId] || activeCatalog.bottles;
   const IMAGES = PRODUCT.images;
   const PRINT_ZONES = PRODUCT.printZones;

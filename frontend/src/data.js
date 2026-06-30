@@ -286,14 +286,14 @@ export const PRODUCTS = {
     offer: "Free satin inner lining upgrade on orders over 50.",
     sizes: ["Tote", "Laptop 15\"", "Laptop 17\"", "Backpack"],
     colors: [
-      { name: "Natural",     hex: "#d4c8a8", image: "/products/bags/tote_bag.png" },
-      { name: "Matte Black", hex: "#111111", image: "/products/bags/tote_bag.png" },
-      { name: "Navy",        hex: "#1a237e", image: "/products/bags/tote_bag.png" }
+      { name: "Natural",     hex: "#d4c8a8", image: "/products/bags/office_bag.png" },
+      { name: "Matte Black", hex: "#111111", image: "/products/bags/office_bag.png" },
+      { name: "Navy",        hex: "#1a237e", image: "/products/bags/office_bag.png" }
     ],
     customizations: ["Text", "Image"],
     quantities: [25, 50, 100, 250, 500],
     pricePerItem: { 25: 550, 50: 480, 100: 400, 250: 340, 500: 290 },
-    images: ["/products/bags/tote_bag.png"],
+    images: ["/products/bags/office_bag.png"],
     printZones: [
       { id: "front", title: "Front Panel", type: "flat", px: 0.2, py: 0.2, pWidth: 0.6, pHeight: 0.5, angle: 0, shape: "rectangle" }
     ]
@@ -425,14 +425,14 @@ export const PRODUCTS = {
     offer: "Free gift box and velvet pouch on every award.",
     sizes: ["Small", "Medium", "Large"],
     colors: [
-      { name: "Crystal Clear", hex: "#e8f4f8", image: "/products/awards/crystal_trophy.png" },
-      { name: "Gold Finish",   hex: "#d4af37", image: "/products/awards/crystal_trophy.png" },
-      { name: "Walnut Wood",   hex: "#5C4033", image: "/products/awards/crystal_trophy.png" }
+      { name: "Crystal Clear", hex: "#e8f4f8", image: "/products/awards/trophy.png" },
+      { name: "Gold Finish",   hex: "#d4af37", image: "/products/awards/trophy.png" },
+      { name: "Walnut Wood",   hex: "#5C4033", image: "/products/awards/trophy.png" }
     ],
     customizations: ["Text"],
     quantities: [1, 5, 10, 25, 50],
     pricePerItem: { 1: 1200, 5: 1000, 10: 850, 25: 700, 50: 600 },
-    images: ["/products/awards/crystal_trophy.png"],
+    images: ["/products/awards/trophy.png"],
     printZones: [
       { id: "plate", title: "Engraving Plate", type: "flat", px: 0.2, py: 0.5, pWidth: 0.6, pHeight: 0.3, angle: 0, shape: "rectangle" }
     ]
