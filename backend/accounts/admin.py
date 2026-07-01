@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.admin import UserAdmin, GroupAdmin
 from django.db.models import Sum
-from .models import Product, PrintZone, BulkInquiry, ContactMessage, CouponCode, ProductReview, PaymentSetting, Payment, CustomerNotification
+from .models import Product, PrintZone, BulkInquiry, ContactMessage, CouponCode, ProductReview, PaymentSetting, Payment, CustomerNotification, ProductImage, ProductColor, ProductPriceTier
 
 class MyAdminSite(admin.AdminSite):
     site_header = "Hari Om Print House Admin"
@@ -36,16 +36,45 @@ my_admin_site.register(User, UserAdmin)
 my_admin_site.register(Group, GroupAdmin)
 
 
+from django.utils.html import format_html
+
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    extra = 1
+    readonly_fields = ('image_preview',)
+
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" style="max-height: 80px; border-radius: 4px;" />', obj.image.url)
+        return "No image uploaded yet"
+    image_preview.short_description = "Preview"
+
+class ProductColorInline(admin.TabularInline):
+    model = ProductColor
+    extra = 1
+    readonly_fields = ('image_preview',)
+
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" style="max-height: 80px; border-radius: 4px;" />', obj.image.url)
+        return "No image uploaded yet"
+    image_preview.short_description = "Preview"
+
+class ProductPriceTierInline(admin.TabularInline):
+    model = ProductPriceTier
+    extra = 1
+
 class PrintZoneInline(admin.TabularInline):
     model = PrintZone
     extra = 1
 
 @admin.register(Product, site=my_admin_site)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'badge')
+    list_display = ('name', 'category', 'is_primary', 'badge')
     search_fields = ('name', 'category')
-    list_filter = ('category',)
-    inlines = [PrintZoneInline]
+    list_filter = ('category', 'is_primary')
+    list_editable = ('is_primary',)
+    inlines = [ProductImageInline, ProductColorInline, ProductPriceTierInline, PrintZoneInline]
 
 @admin.register(PrintZone, site=my_admin_site)
 class PrintZoneAdmin(admin.ModelAdmin):

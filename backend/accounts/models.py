@@ -2,7 +2,8 @@ from django.db import models
 from django.contrib.auth.models import User
 
 class Product(models.Model):
-    category = models.CharField(max_length=50, unique=True, help_text="e.g. bottles, mugs, diaries, pens")
+    category = models.CharField(max_length=50, help_text="e.g. bottles, mugs, diaries, pens")
+    is_primary = models.BooleanField(default=True, help_text="Is this the default product shown for this category on the website?")
     name = models.CharField(max_length=255)
     badge = models.CharField(max_length=50, blank=True, null=True)
     description = models.TextField()
@@ -208,4 +209,74 @@ class ProductReview(models.Model):
 
     def __str__(self):
         return f"Review by {self.user.username} on {self.product_category} ({self.rating} stars)"
+
+
+class ProductImage(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_images')
+    image = models.ImageField(upload_to='products/')
+
+    def __str__(self):
+        return f"{self.product.name} Image #{self.id}"
+
+
+class ProductColor(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_colors')
+    name = models.CharField(max_length=100)
+    hex_code = models.CharField(max_length=7, help_text="e.g. #ffffff")
+    image = models.ImageField(upload_to='products/colors/', blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.product.name} Color: {self.name}"
+
+
+class ProductPriceTier(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_tiers')
+    quantity = models.PositiveIntegerField(help_text="Minimum quantity for this price, e.g. 50")
+    price_per_item = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price per item at this tier")
+
+    class Meta:
+        ordering = ['quantity']
+        unique_together = ('product', 'quantity')
+
+    def __str__(self):
+        return f"{self.product.name}: {self.quantity}+ @ ₹{self.price_per_item}"
+
+
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+
+@receiver(post_save, sender=ProductImage)
+@receiver(post_delete, sender=ProductImage)
+def sync_product_images_json(sender, instance, **kwargs):
+    product = instance.product
+    urls = []
+    for pi in product.product_images.all():
+        if pi.image:
+            urls.append(pi.image.url)
+    product.images = urls
+    product.save()
+
+@receiver(post_save, sender=ProductColor)
+@receiver(post_delete, sender=ProductColor)
+def sync_product_colors_json(sender, instance, **kwargs):
+    product = instance.product
+    colors_list = []
+    for pc in product.product_colors.all():
+        colors_list.append({
+            "name": pc.name,
+            "hex": pc.hex_code,
+            "image": pc.image.url if pc.image else ""
+        })
+    product.colors = colors_list
+    product.save()
+
+@receiver(post_save, sender=ProductPriceTier)
+@receiver(post_delete, sender=ProductPriceTier)
+def sync_product_price_tiers_json(sender, instance, **kwargs):
+    product = instance.product
+    price_map = {}
+    for pt in product.price_tiers.all():
+        price_map[str(pt.quantity)] = float(pt.price_per_item)
+    product.price_per_item = price_map
+    product.save()
 

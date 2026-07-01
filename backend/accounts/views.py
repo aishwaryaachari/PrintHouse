@@ -142,7 +142,9 @@ def get_products_view(request):
         from .models import Product
         seed_default_products()
         
-        products = Product.objects.all()
+        # Order by is_primary ascending (False first, True last) so that the primary product
+        # for a category overrides any non-primary ones in the returned dictionary
+        products = Product.objects.all().order_by('is_primary')
         data = {}
         for p in products:
             zones = []

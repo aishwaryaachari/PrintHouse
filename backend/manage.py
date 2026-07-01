@@ -4,8 +4,26 @@ import os
 import sys
 
 
+def load_env():
+    import os
+    from pathlib import Path
+    env_path = Path(__file__).resolve().parent / '.env'
+    if not env_path.exists():
+        env_path = Path(__file__).resolve().parent.parent / '.env'
+    if env_path.exists():
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    try:
+                        key, val = line.split('=', 1)
+                        os.environ[key.strip()] = val.strip().strip("'\"")
+                    except ValueError:
+                        pass
+
 def main():
     """Run administrative tasks."""
+    load_env()
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
     try:
         from django.core.management import execute_from_command_line
